@@ -36,23 +36,23 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
-          username: xelis
+          username: tomisetsu
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
       - name: Retrieve version from Cargo.toml
         run: |
-          VERSION=`awk -F ' = ' '$1 ~ /version/ { gsub(/[\\"]/, "", $2); printf("%s",$2) }' xelis_${{ matrix.app }}/Cargo.toml`
-          echo "XELIS_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          VERSION=`awk -F ' = ' '$1 ~ /version/ { gsub(/[\\"]/, "", $2); printf("%s",$2) }' terminos_${{ matrix.app }}/Cargo.toml`
+          echo "TERMINOS_VERSION=${VERSION}" >> "$GITHUB_ENV"
 
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: xelis/${{ matrix.app }}
+          images: terminos/${{ matrix.app }}
           labels: |
-            org.opencontainers.image.title=Xelis ${{ matrix.app }}
+            org.opencontainers.image.title=Terminos ${{ matrix.app }}
           tags: |
-            type=schedule,pattern=${{ env.XELIS_VERSION }}-nightly-{{date 'YYYYMMDD'}}
+            type=schedule,pattern=${{ env.TERMINOS_VERSION }}-nightly-{{date 'YYYYMMDD'}}
             type=semver,pattern={{version}},event=tag
             type=ref,event=pr
 
@@ -67,6 +67,6 @@ jobs:
           cache-from: type=gha
           cache-to: ${{ env.SHOULD_PUSH && 'type=gha,mode=max' || '' }}
           build-args: |
-            app=xelis_${{ matrix.app }}
+            app=terminos_${{ matrix.app }}
             commit_hash=${{ github.sha }}
           platforms: ${{ env.SHOULD_PUSH && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
