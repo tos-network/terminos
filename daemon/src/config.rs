@@ -28,7 +28,7 @@ pub const DEFAULT_CACHE_SIZE: usize = 1024;
 // Millis per second, it is used to prevent having random 1000 values anywhere
 pub const MILLIS_PER_SECOND: u64 = 1000;
 // Block Time in milliseconds
-pub const BLOCK_TIME_MILLIS: u64 = 15 * MILLIS_PER_SECOND; // 15s block time
+pub const BLOCK_TIME_MILLIS: u64 = 12 * MILLIS_PER_SECOND; // 12s block time
 // Minimum difficulty (each difficulty point is in H/s)
 // Current: BLOCK TIME in millis * 20 = 20 KH/s minimum
 // This is to prevent spamming the network with low difficulty blocks
@@ -64,8 +64,8 @@ pub const DEV_FEES: [DevFeeThreshold; 2] = [
     // Activated for the rest
     DevFeeThreshold {
         // after ~1.5 year it's reduced to 5%
-        // 3 250 000 blocks * 15s of block time / 60s / 60m / 24h / 365d = 1.5 years
-        height: 3_250_000, 
+        // 3 942 000 blocks * 12s of block time / 60s / 60m / 24h / 365d = 1.5 years
+        height: 3_942_000, 
         fee_percentage: 5
     }
 ];
@@ -90,7 +90,7 @@ pub const EMISSION_SPEED_FACTOR: u64 = 20;
 
 // Developer address for paying dev fees until Smart Contracts integration
 // (testnet/mainnet format is converted lazily later)
-pub const DEV_ADDRESS: &str = "xel:vs3mfyywt0fjys0rgslue7mm4wr23xdgejsjk0ld7f2kxng4d4nqqnkdufz";
+pub const DEV_ADDRESS: &str = "tos:qsl6sj2u0gp37tr6drrq964rd4d8gnaxnezgytmt0cfltnp2wsgqqak28je";
 
 // Chain sync config
 // minimum X seconds between each chain sync request per peer
@@ -178,54 +178,22 @@ pub const PEER_PACKET_CHANNEL_SIZE: usize = 1024;
 pub const PEER_SEND_BYTES_TIMEOUT: u64 = 3_000;
 
 // Hard Forks configured
-const HARD_FORKS: [HardFork; 3] = [
+const HARD_FORKS: [HardFork; 1] = [
     HardFork {
         height: 0,
-        version: BlockVersion::V0,
+        version: BlockVersion::V2,
         changelog: "Initial version",
         version_requirement: None
-    },
-    HardFork {
-        // Expected date: 10/07/2024 12am UTC
-        height: 434_100,
-        version: BlockVersion::V1,
-        changelog: "xelis-hash v2",
-        version_requirement: Some(">=1.13.0")
-    },
-    HardFork {
-        // Expected date: 30/12/2024 9pm UTC
-        height: 1_376_000,
-        version: BlockVersion::V2,
-        changelog: "MultiSig, P2P",
-        version_requirement: Some(">=1.16.0")
     }
 ];
 
 // Testnet / Devnet hard forks
-const TESTNET_HARD_FORKS: [HardFork; 4] = [
+const TESTNET_HARD_FORKS: [HardFork; 1] = [
     HardFork {
         height: 0,
-        version: BlockVersion::V0,
+        version: BlockVersion::V2,
         changelog: "Initial version",
         version_requirement: None
-    },
-    HardFork {
-        height: 5,
-        version: BlockVersion::V1,
-        changelog: "xelis-hash v2",
-        version_requirement: Some(">=1.13.0")
-    },
-    HardFork {
-        height: 10,
-        version: BlockVersion::V2,
-        changelog: "MultiSig, P2P",
-        version_requirement: Some(">=1.16.0")
-    },
-    HardFork {
-        height: 15,
-        version: BlockVersion::V3,
-        changelog: "Smart Contracts",
-        version_requirement: Some(">=1.16.0")
     }
 ];
 
@@ -255,12 +223,14 @@ const TESTNET_SEED_NODES: [&str; 1] = [
 
 // Genesis block to have the same starting point for every nodes
 // Genesis block in hexadecimal format
-const MAINNET_GENESIS_BLOCK: &str = "0000000000000000000000018efc057580000000000000000000000000000000000000000000000000000000000000000000000000000000000000006423b4908e5bd32241e3443fccfb7bab86a899a8cca12b3fedf255634d156d66";
+const MAINNET_GENESIS_BLOCK: &str = "02000000000000000000000197ff69f08100000000000000000000000000000000000000000000000000000000000000000000000000000000000000043fa8495c7a031f2c7a68c602eaa36d5a744fa69e44822f6b7e13f5cc2a7410";
 const TESTNET_GENESIS_BLOCK: &str = "0000000000000000000000018f116b47cf000000000000000000000000000000000000000000000000000000000000000000000000000000000000006423b4908e5bd32241e3443fccfb7bab86a899a8cca12b3fedf255634d156d66";
 
 // Genesis block hash for both networks
 // It must be the same as the hash of the genesis block
-const MAINNET_GENESIS_BLOCK_HASH: Hash = Hash::new([175, 118, 37, 203, 175, 200, 25, 148, 9, 202, 29, 120, 93, 128, 36, 209, 146, 193, 217, 36, 61, 51, 24, 194, 114, 113, 121, 208, 237, 163, 27, 55]);
+//const MAINNET_GENESIS_BLOCK_HASH: Hash = Hash::new([175, 118, 37, 203, 175, 200, 25, 148, 9, 202, 29, 120, 93, 128, 36, 209, 146, 193, 217, 36, 61, 51, 24, 194, 114, 113, 121, 208, 237, 163, 27, 55]);
+const MAINNET_GENESIS_BLOCK_HASH: Hash = Hash::new([123, 111, 199, 253, 98, 37, 114, 152, 179, 226, 64, 94, 57, 131, 108, 241, 153, 243, 177, 108, 175, 198, 106, 4, 165, 113, 220, 59, 249, 217, 57, 252]);
+
 const TESTNET_GENESIS_BLOCK_HASH: Hash = Hash::new([171, 50, 219, 186, 28, 164, 189, 225, 197, 167, 187, 143, 213, 59, 217, 238, 51, 242, 133, 181, 188, 235, 151, 50, 110, 33, 185, 188, 100, 146, 23, 132]);
 
 // Genesis block getter

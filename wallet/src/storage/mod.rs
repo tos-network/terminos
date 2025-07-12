@@ -18,7 +18,7 @@ use terminos_common::{
         DataValue
     },
     asset::AssetData,
-    config::XELIS_ASSET,
+    config::TERMINOS_ASSET,
     crypto::{
         elgamal::CompressedCiphertext,
         Hash,
@@ -1021,7 +1021,7 @@ impl EncryptedStorage {
 
             let mut transfers: Option<Vec<Transfer>> = None;
             match entry.get_mut_entry() {
-                EntryData::Coinbase { .. } if accept_coinbase && (asset.map(|a| *a == XELIS_ASSET).unwrap_or(true)) => {},
+                EntryData::Coinbase { .. } if accept_coinbase && (asset.map(|a| *a == TERMINOS_ASSET).unwrap_or(true)) => {},
                 EntryData::Burn { asset: burn_asset, .. } if accept_burn => {
                     if let Some(asset) = asset {
                         if *asset != *burn_asset {

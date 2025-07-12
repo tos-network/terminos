@@ -1,7 +1,7 @@
 use log::{debug, warn};
 use terminos_common::{
     asset::{AssetData, VersionedAssetData},
-    config::{COIN_DECIMALS, MAXIMUM_SUPPLY, VERSION, XELIS_ASSET},
+    config::{COIN_DECIMALS, MAXIMUM_SUPPLY, VERSION, TERMINOS_ASSET},
     network::Network,
     serializer::Serializer
 };
@@ -24,7 +24,7 @@ impl SledStorage {
 
             // We need to patch the ticker for XELIS asset
             let data = AssetData::new(COIN_DECIMALS, "XELIS".to_owned(), ticker, Some(MAXIMUM_SUPPLY), None);
-            let key = Self::get_asset_key(&XELIS_ASSET, 0);
+            let key = Self::get_asset_key(&TERMINOS_ASSET, 0);
 
             self.versioned_assets.insert(&key, VersionedAssetData::new(data, None).to_bytes())?;
         }

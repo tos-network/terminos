@@ -11,7 +11,7 @@ use rpc::rpc::get_block_response_for_hash;
 use serde::{Deserialize, Serialize};
 use terminos_common::{
     async_handler,
-    config::{init, VERSION, XELIS_ASSET},
+    config::{init, VERSION, TERMINOS_ASSET},
     context::Context,
     crypto::{
         Address,Hashable
@@ -527,7 +527,7 @@ async fn verify_chain<S: Storage>(manager: &CommandManager, mut args: ArgumentMa
 
         // Verify that we have a balance for each account updated
         let header = storage.get_block_header_by_hash(&hash_at_topo).await.context("Error while retrieving block header")?;
-        if !storage.has_balance_at_exact_topoheight(header.get_miner(), &XELIS_ASSET, topo).await.context("Error while checking the miner balance version")? {
+        if !storage.has_balance_at_exact_topoheight(header.get_miner(), &TERMINOS_ASSET, topo).await.context("Error while checking the miner balance version")? {
             manager.error(format!("No balance version found for miner {} at topoheight {} for block {}", header.get_miner().as_address(blockchain.get_network().is_mainnet()), topo, hash_at_topo));
             return Ok(())
         }
@@ -551,7 +551,7 @@ async fn verify_chain<S: Storage>(manager: &CommandManager, mut args: ArgumentMa
                 }
 
                 // TODO: with upcoming smart contracts, this may be biased due to the gas fee
-                if let Some(burned) = transaction.get_burned_amount(&XELIS_ASSET) {
+                if let Some(burned) = transaction.get_burned_amount(&TERMINOS_ASSET) {
                     burned_sum += burned;
                 }
             }
@@ -618,7 +618,7 @@ async fn print_balance<S: Storage>(manager: &CommandManager, _: ArgumentManager)
         .context("Error while reading topoheight")?;
 
     let asset = prompt.read_hash("Asset (default XELIS): ").await.ok();
-    let asset = asset.unwrap_or(XELIS_ASSET);
+    let asset = asset.unwrap_or(TERMINOS_ASSET);
 
     let balance = storage.get_balance_at_exact_topoheight(&address.to_public_key(), &asset, topoheight).await
         .context("Error while retrieving balance")?;
@@ -947,7 +947,7 @@ async fn show_balance<S: Storage>(manager: &CommandManager, mut arguments: Argum
         prompt.colorize_string(Color::Green, "Asset (default XELIS): ")
     ).await.ok();
 
-    let asset = asset.unwrap_or(XELIS_ASSET);
+    let asset = asset.unwrap_or(TERMINOS_ASSET);
 
     let mut history = if arguments.has_argument("history") {
         let value = arguments.get_value("history")?.to_number()?;

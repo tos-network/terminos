@@ -16,7 +16,7 @@ use terminos_common::{
     config::{
         init,
         VERSION,
-        XELIS_ASSET
+        TERMINOS_ASSET
     },
     crypto::{
         ecdlp,
@@ -750,7 +750,7 @@ async fn prompt_message_builder(prompt: &Prompt, command_manager: Option<&Comman
             let balance = format!(
                 "{}: {}",
                 prompt.colorize_string(Color::Yellow, "Balance"),
-                prompt.colorize_string(Color::Green, &format_xelis(storage.get_plaintext_balance_for(&XELIS_ASSET).await.unwrap_or(0))),
+                prompt.colorize_string(Color::Green, &format_xelis(storage.get_plaintext_balance_for(&TERMINOS_ASSET).await.unwrap_or(0))),
             );
             let status = if wallet.is_online().await {
                 prompt.colorize_string(Color::Green, "Online")
@@ -1129,7 +1129,7 @@ async fn transfer(manager: &CommandManager, mut args: ArgumentManager) -> Result
             false
         ).await?;
         if asset_name.is_empty() {
-            XELIS_ASSET
+            TERMINOS_ASSET
         } else if asset_name.len() == HASH_SIZE * 2 {
             Hash::from_hex(&asset_name).context("Error while reading hash from hex")?
         } else {
@@ -1214,7 +1214,7 @@ async fn transfer_all(manager: &CommandManager, mut args: ArgumentManager) -> Re
        ).await.ok();
     }
 
-    let asset = asset.unwrap_or(XELIS_ASSET);
+    let asset = asset.unwrap_or(TERMINOS_ASSET);
     let (mut amount, asset_data, multisig) = {
         let storage = wallet.get_storage().read().await;
         let amount = storage.get_plaintext_balance_for(&asset).await.unwrap_or(0);
@@ -1234,7 +1234,7 @@ async fn transfer_all(manager: &CommandManager, mut args: ArgumentManager) -> Re
     let tx_type = TransactionTypeBuilder::Transfers(vec![transfer]);
     let estimated_fees = wallet.estimate_fees(tx_type.clone(), FeeBuilder::default()).await.context("Error while estimating fees")?;
 
-    if asset == XELIS_ASSET {
+    if asset == TERMINOS_ASSET {
         amount = amount.checked_sub(estimated_fees).context("Insufficient balance to pay fees")?;
     }
 
@@ -1280,7 +1280,7 @@ async fn burn(manager: &CommandManager, mut args: ArgumentManager) -> Result<(),
     } else {
         prompt.read_hash(
             prompt.colorize_string(Color::Green, "Asset (default XELIS): ")
-        ).await.unwrap_or(XELIS_ASSET)
+        ).await.unwrap_or(TERMINOS_ASSET)
     };
 
     let (max_balance, asset_data, multisig) = {

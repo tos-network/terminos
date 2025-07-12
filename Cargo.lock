@@ -1490,6 +1490,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "genesis"
+version = "1.0.0"
+dependencies = [
+ "indexmap 2.9.0",
+ "terminos_common",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3158,7 +3166,7 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "terminos_common"
-version = "0.0.1"
+version = "1.0.0"
 dependencies = [
  "actix-rt",
  "actix-web",
@@ -3210,7 +3218,7 @@ dependencies = [
 
 [[package]]
 name = "terminos_daemon"
-version = "0.0.1"
+version = "1.0.0"
 dependencies = [
  "actix",
  "actix-web",
@@ -3246,7 +3254,7 @@ dependencies = [
 
 [[package]]
 name = "terminos_miner"
-version = "0.0.1"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3263,7 +3271,7 @@ dependencies = [
 
 [[package]]
 name = "terminos_wallet"
-version = "0.0.1"
+version = "1.0.0"
 dependencies = [
  "actix",
  "actix-web",

@@ -348,7 +348,7 @@ pub struct TransferIn {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EntryType {
-    // Coinbase is only XELIS_ASSET
+    // Coinbase is only TERMINOS_ASSET
     Coinbase {
         reward: u64
     },

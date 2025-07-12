@@ -1,0 +1,8 @@
+[package]
+name = "genesis"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+terminos_common = { path = "../common" }
+indexmap = "2.0" 

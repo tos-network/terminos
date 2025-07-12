@@ -7,7 +7,7 @@ use crate::{
     account::{CiphertextCache, Nonce},
     api::{DataElement, DataValue},
     block::BlockVersion,
-    config::{BURN_PER_CONTRACT, COIN_VALUE, XELIS_ASSET},
+    config::{BURN_PER_CONTRACT, COIN_VALUE, TERMINOS_ASSET},
     crypto::{
         elgamal::{Ciphertext, PedersenOpening},
         proofs::PC_GENS,
@@ -124,7 +124,7 @@ fn create_tx_for(account: Account, destination: Address, amount: u64, extra_data
     let data = TransactionTypeBuilder::Transfers(vec![TransferBuilder {
         amount,
         destination,
-        asset: XELIS_ASSET,
+        asset: TERMINOS_ASSET,
         extra_data,
         encrypt_extra_data: true,
     }]);
@@ -155,7 +155,7 @@ fn test_encrypt_decrypt() {
 #[test]
 fn test_encrypt_decrypt_two_parties() {
     let mut alice = Account::new();
-    alice.balances.insert(XELIS_ASSET, Balance {
+    alice.balances.insert(TERMINOS_ASSET, Balance {
         balance: 100 * COIN_VALUE,
         ciphertext: CiphertextCache::Decompressed(alice.keypair.get_public_key().encrypt(100 * COIN_VALUE)),
     });
@@ -195,8 +195,8 @@ async fn test_tx_verify() {
     let mut alice = Account::new();
     let mut bob = Account::new();
 
-    alice.set_balance(XELIS_ASSET, 100 * COIN_VALUE);
-    bob.set_balance(XELIS_ASSET, 0);
+    alice.set_balance(TERMINOS_ASSET, 100 * COIN_VALUE);
+    bob.set_balance(TERMINOS_ASSET, 0);
 
     // Alice account is cloned to not be updated as it is used for verification and need current state
     let tx = create_tx_for(alice.clone(), bob.address(), 50, None);
@@ -230,18 +230,18 @@ async fn test_tx_verify() {
     tx.verify(&hash, &mut state).await.unwrap();
 
     // Check Bob balance
-    let balance = bob.keypair.decrypt_to_point(&state.accounts[&bob.keypair.get_public_key().compress()].balances[&XELIS_ASSET]);    
+    let balance = bob.keypair.decrypt_to_point(&state.accounts[&bob.keypair.get_public_key().compress()].balances[&TERMINOS_ASSET]);    
     assert_eq!(balance, Scalar::from(50u64) * PC_GENS.B);
 
     // Check Alice balance
-    let balance = alice.keypair.decrypt_to_point(&state.accounts[&alice.keypair.get_public_key().compress()].balances[&XELIS_ASSET]);
+    let balance = alice.keypair.decrypt_to_point(&state.accounts[&alice.keypair.get_public_key().compress()].balances[&TERMINOS_ASSET]);
     assert_eq!(balance, Scalar::from((100u64 * COIN_VALUE) - (50 + tx.fee)) * PC_GENS.B);
 }
 
 #[tokio::test]
 async fn test_burn_tx_verify() {
     let mut alice = Account::new();
-    alice.set_balance(XELIS_ASSET, 100 * COIN_VALUE);
+    alice.set_balance(TERMINOS_ASSET, 100 * COIN_VALUE);
 
     let tx = {
         let mut state = AccountStateImpl {
@@ -255,7 +255,7 @@ async fn test_burn_tx_verify() {
     
         let data = TransactionTypeBuilder::Burn(BurnPayload {
             amount: 50 * COIN_VALUE,
-            asset: XELIS_ASSET,
+            asset: TERMINOS_ASSET,
         });
         let builder = TransactionBuilder::new(TxVersion::V0, alice.keypair.get_public_key().compress(), None, data, FeeBuilder::default());
         let estimated_size = builder.estimate_size();
@@ -284,7 +284,7 @@ async fn test_burn_tx_verify() {
     tx.verify(&hash, &mut state).await.unwrap();
 
     // Check Alice balance
-    let balance = alice.keypair.decrypt_to_point(&state.accounts[&alice.keypair.get_public_key().compress()].balances[&XELIS_ASSET]);
+    let balance = alice.keypair.decrypt_to_point(&state.accounts[&alice.keypair.get_public_key().compress()].balances[&TERMINOS_ASSET]);
     assert_eq!(balance, Scalar::from((100u64 * COIN_VALUE) - (50 * COIN_VALUE + tx.fee)) * PC_GENS.B);
 }
 
@@ -292,7 +292,7 @@ async fn test_burn_tx_verify() {
 async fn test_tx_invoke_contract() {
     let mut alice = Account::new();
 
-    alice.set_balance(XELIS_ASSET, 100 * COIN_VALUE);
+    alice.set_balance(TERMINOS_ASSET, 100 * COIN_VALUE);
 
     let tx = {
         let mut state = AccountStateImpl {
@@ -310,7 +310,7 @@ async fn test_tx_invoke_contract() {
             max_gas: 1000,
             parameters: Vec::new(),
             deposits: [
-                (XELIS_ASSET, ContractDepositBuilder {
+                (TERMINOS_ASSET, ContractDepositBuilder {
                     amount: 50 * COIN_VALUE,
                     private: false
                 })
@@ -346,7 +346,7 @@ async fn test_tx_invoke_contract() {
     tx.verify(&hash, &mut state).await.unwrap();
 
     // Check Alice balance
-    let balance = alice.keypair.decrypt_to_point(&state.accounts[&alice.keypair.get_public_key().compress()].balances[&XELIS_ASSET]);
+    let balance = alice.keypair.decrypt_to_point(&state.accounts[&alice.keypair.get_public_key().compress()].balances[&TERMINOS_ASSET]);
     // 50 coins deposit + tx fee + 1000 gas fee
     let total_spend = (50 * COIN_VALUE) + tx.fee + 1000;
 
@@ -358,7 +358,7 @@ async fn test_tx_invoke_contract() {
 async fn test_tx_deploy_contract() {
     let mut alice = Account::new();
 
-    alice.set_balance(XELIS_ASSET, 100 * COIN_VALUE);
+    alice.set_balance(TERMINOS_ASSET, 100 * COIN_VALUE);
 
     let tx = {
         let mut state = AccountStateImpl {
@@ -403,7 +403,7 @@ async fn test_tx_deploy_contract() {
     tx.verify(&hash, &mut state).await.unwrap();
 
     // Check Alice balance
-    let balance = alice.keypair.decrypt_to_point(&state.accounts[&alice.keypair.get_public_key().compress()].balances[&XELIS_ASSET]);
+    let balance = alice.keypair.decrypt_to_point(&state.accounts[&alice.keypair.get_public_key().compress()].balances[&TERMINOS_ASSET]);
     // 1 XEL for contract deploy, tx fee
     let total_spend = BURN_PER_CONTRACT + tx.fee;
 
@@ -415,8 +415,8 @@ async fn test_max_transfers() {
     let mut alice = Account::new();
     let mut bob = Account::new();
 
-    alice.set_balance(XELIS_ASSET, 100 * COIN_VALUE);
-    bob.set_balance(XELIS_ASSET, 0);
+    alice.set_balance(TERMINOS_ASSET, 100 * COIN_VALUE);
+    bob.set_balance(TERMINOS_ASSET, 0);
 
     let tx = {
         let mut transfers = Vec::new();
@@ -424,7 +424,7 @@ async fn test_max_transfers() {
             transfers.push(TransferBuilder {
                 amount: 1,
                 destination: bob.address(),
-                asset: XELIS_ASSET,
+                asset: TERMINOS_ASSET,
                 extra_data: None,
                 encrypt_extra_data: true,
             });
@@ -485,8 +485,8 @@ async fn test_multisig_setup() {
     let mut bob = Account::new();
     let charlie = Account::new();
 
-    alice.set_balance(XELIS_ASSET, 100 * COIN_VALUE);
-    bob.set_balance(XELIS_ASSET, 0);
+    alice.set_balance(TERMINOS_ASSET, 100 * COIN_VALUE);
+    bob.set_balance(TERMINOS_ASSET, 0);
 
     let tx = {
         let mut state = AccountStateImpl {
@@ -551,8 +551,8 @@ async fn test_multisig() {
     let charlie = Account::new();
     let dave = Account::new();
 
-    alice.set_balance(XELIS_ASSET, 100 * COIN_VALUE);
-    bob.set_balance(XELIS_ASSET, 0);
+    alice.set_balance(TERMINOS_ASSET, 100 * COIN_VALUE);
+    bob.set_balance(TERMINOS_ASSET, 0);
 
     let tx = {
         let mut state = AccountStateImpl {
@@ -567,7 +567,7 @@ async fn test_multisig() {
         let data = TransactionTypeBuilder::Transfers(vec![TransferBuilder {
             amount: 1,
             destination: bob.address(),
-            asset: XELIS_ASSET,
+            asset: TERMINOS_ASSET,
             extra_data: None,
             encrypt_extra_data: true,
         }]);

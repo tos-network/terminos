@@ -66,19 +66,19 @@ mod tests {
     use indexmap::indexmap;
     use serde_json::json;
     use xelis_vm::Primitive;
-    use crate::{config::XELIS_ASSET, serializer::Serializer};
+    use crate::{config::TERMINOS_ASSET, serializer::Serializer};
 
     use super::*;
 
     #[test]
     fn test_invoke_contract_builder() {
         let builder = InvokeContractBuilder {
-            contract: XELIS_ASSET,
+            contract: TERMINOS_ASSET,
             max_gas: 1000,
             chunk_id: 0,
             parameters: vec![ValueCell::Default(Primitive::U64(100))],
             deposits: indexmap! {
-                XELIS_ASSET => ContractDepositBuilder {
+                TERMINOS_ASSET => ContractDepositBuilder {
                     amount: 100,
                     private: false,
                 }

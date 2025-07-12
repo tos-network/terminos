@@ -365,7 +365,7 @@ pub struct TransactionResponse<'a> {
 }
 
 fn default_xelis_asset() -> Hash {
-    crate::config::XELIS_ASSET
+    crate::config::TERMINOS_ASSET
 }
 
 #[derive(Serialize, Deserialize)]

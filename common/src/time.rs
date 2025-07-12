@@ -22,7 +22,6 @@ pub fn get_current_time_in_seconds() -> TimestampSeconds {
 
 // return timestamp in milliseconds
 // We cast it to u64 as we have plenty of time before it overflows
-// See more: https://github.com/xelis-project/xelis-blockchain/issues/18
 pub fn get_current_time_in_millis() -> TimestampMillis {
     get_current_time().as_millis() as TimestampMillis
 }

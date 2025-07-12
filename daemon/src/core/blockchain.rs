@@ -37,7 +37,7 @@ use terminos_common::{
         MAX_TRANSACTION_SIZE,
         MAX_BLOCK_SIZE,
         TIPS_LIMIT,
-        XELIS_ASSET
+        TERMINOS_ASSET
     },
     crypto::{
         Hash,
@@ -527,14 +527,14 @@ impl<S: Storage> Blockchain<S> {
         let mut storage = self.storage.write().await;
 
         // register XELIS asset
-        debug!("Registering XELIS asset: {} at topoheight 0", XELIS_ASSET);
+        debug!("Registering XELIS asset: {} at topoheight 0", TERMINOS_ASSET);
         let ticker = match self.network {
             Network::Mainnet => "XEL".to_owned(),
             _ => "XET".to_owned(),
         };
 
         storage.add_asset(
-            &XELIS_ASSET,
+            &TERMINOS_ASSET,
             0,
             VersionedAssetData::new(
                 AssetData::new(COIN_DECIMALS, "XELIS".to_owned(), ticker, Some(MAXIMUM_SUPPLY), None),

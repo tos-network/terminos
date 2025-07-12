@@ -89,7 +89,7 @@ use {
         daemon_api::DaemonAPI,
         storage::Balance,
     },
-    terminos_common::config::XELIS_ASSET,
+    terminos_common::config::TERMINOS_ASSET,
 };
 use rand::{rngs::OsRng, RngCore};
 use log::{
@@ -688,7 +688,7 @@ impl Wallet {
             let force_stable_balance = self.should_force_stable_balance();
             // Reference must be none in order to use the last stable balance
             // Otherwise that mean we're still waiting on a TX to be confirmed
-            if generated && (used_assets.contains(&XELIS_ASSET) || force_stable_balance) {
+            if generated && (used_assets.contains(&TERMINOS_ASSET) || force_stable_balance) {
                 if let Some(network_handler) = self.network_handler.lock().await.as_ref() {
                     let mut daemon_stable_topoheight = None;
                     // Last mining reward is above stable topoheight, this may increase orphans rate

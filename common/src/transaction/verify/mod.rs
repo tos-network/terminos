@@ -22,7 +22,7 @@ use xelis_vm::ModuleValidator;
 use crate::{
     tokio::block_in_place_safe,
     account::Nonce,
-    config::{BURN_PER_CONTRACT, MAX_GAS_USAGE_PER_TX, XELIS_ASSET},
+    config::{BURN_PER_CONTRACT, MAX_GAS_USAGE_PER_TX, TERMINOS_ASSET},
     contract::ContractProvider,
     crypto::{
         elgamal::{
@@ -139,7 +139,7 @@ impl Transaction {
     ) -> Result<Ciphertext, DecompressionError> {
         let mut output = Ciphertext::zero();
 
-        if *asset == XELIS_ASSET {
+        if *asset == TERMINOS_ASSET {
             // Fees are applied to the native blockchain asset only.
             output += Scalar::from(self.fee);
         }
@@ -159,7 +159,7 @@ impl Transaction {
             },
             TransactionType::MultiSig(_) => {},
             TransactionType::InvokeContract(payload) => {
-                if *asset == XELIS_ASSET {
+                if *asset == TERMINOS_ASSET {
                     output += Scalar::from(payload.max_gas);
                 }
 
@@ -179,7 +179,7 @@ impl Transaction {
             },
             TransactionType::DeployContract(payload) => {
                 if let Some(invoke) = payload.invoke.as_ref() {
-                    if *asset == XELIS_ASSET {
+                    if *asset == TERMINOS_ASSET {
                         output += Scalar::from(invoke.max_gas);
                     }
 
@@ -199,7 +199,7 @@ impl Transaction {
                 }
 
                 // Burn a full coin for each contract deployed
-                if *asset == XELIS_ASSET {
+                if *asset == TERMINOS_ASSET {
                     output += Scalar::from(BURN_PER_CONTRACT);
                 }
             }
@@ -270,8 +270,8 @@ impl Transaction {
                 .any(|c| c.get_asset() == asset)
         };
 
-        // XELIS_ASSET is always required for fees
-        if !has_commitment_for_asset(&XELIS_ASSET) {
+        // TERMINOS_ASSET is always required for fees
+        if !has_commitment_for_asset(&TERMINOS_ASSET) {
             return false;
         }
 
@@ -914,7 +914,7 @@ impl Transaction {
                 }
             },
             TransactionType::Burn(payload) => {
-                if payload.asset == XELIS_ASSET {
+                if payload.asset == TERMINOS_ASSET {
                     state.add_burned_coins(payload.amount).await
                         .map_err(VerificationError::State)?;
                 }

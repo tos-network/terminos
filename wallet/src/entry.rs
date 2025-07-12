@@ -7,7 +7,7 @@ use terminos_common::{
         TransferIn as RPCTransferIn,
         TransferOut as RPCTransferOut
     },
-    config::XELIS_ASSET,
+    config::TERMINOS_ASSET,
     crypto::{
         Hash,
         PublicKey
@@ -156,7 +156,7 @@ impl Serializer for TransferIn {
 
 #[derive(Debug, Clone)]
 pub enum EntryData {
-    // Coinbase is only XELIS_ASSET
+    // Coinbase is only TERMINOS_ASSET
     Coinbase {
         reward: u64
     },
@@ -479,7 +479,7 @@ impl TransactionEntry {
             EntryData::Incoming { from, transfers } => {
                 let mut str = String::new();
                 for transfer in transfers {
-                    if *transfer.get_asset() == XELIS_ASSET {
+                    if *transfer.get_asset() == TERMINOS_ASSET {
                         str.push_str(&format!("Received {} XELIS from {}", format_xelis(transfer.get_amount()), from.as_address(mainnet)));
                     } else {
                         let data = storage.get_asset(transfer.get_asset()).await?;
@@ -491,7 +491,7 @@ impl TransactionEntry {
             EntryData::Outgoing { transfers, fee, nonce } => {
                 let mut str = format!("Fee: {}, Nonce: {} ", format_xelis(*fee), nonce);
                 for transfer in transfers {
-                    if *transfer.get_asset() == XELIS_ASSET {
+                    if *transfer.get_asset() == TERMINOS_ASSET {
                         str.push_str(&format!("Sent {} XELIS to {}", format_xelis(transfer.get_amount()), transfer.get_destination().as_address(mainnet)));
                     } else {
                         let data = storage.get_asset(transfer.get_asset()).await?;

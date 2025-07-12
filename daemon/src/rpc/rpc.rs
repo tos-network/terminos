@@ -41,7 +41,7 @@ use terminos_common::{
         MAXIMUM_SUPPLY,
         MAX_TRANSACTION_SIZE,
         VERSION,
-        XELIS_ASSET
+        TERMINOS_ASSET
     },
     context::Context,
     crypto::{Address, AddressType, Hash},
@@ -1129,7 +1129,7 @@ async fn get_account_history<S: Storage>(context: &Context, body: Value) -> Resu
         let (hash, block_header) = storage.get_block_header_at_topoheight(topo).await.context(format!("Error while retrieving block header at topo height {topo}"))?;
 
         // Block reward is only paid in XELIS
-        if params.asset == XELIS_ASSET {
+        if params.asset == TERMINOS_ASSET {
             let is_miner = *block_header.get_miner() == *key;
             if (is_miner || is_dev_address) && params.incoming_flow {
                 let mut reward = storage.get_block_reward_at_topo_height(topo).context(format!("Error while retrieving reward at topo height {topo}"))?;

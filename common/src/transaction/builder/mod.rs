@@ -21,7 +21,7 @@ use std::{
     iter,
 };
 use crate::{
-    config::{BURN_PER_CONTRACT, MAX_GAS_USAGE_PER_TX, XELIS_ASSET},
+    config::{BURN_PER_CONTRACT, MAX_GAS_USAGE_PER_TX, TERMINOS_ASSET},
     crypto::{
         elgamal::{
             Ciphertext,
@@ -185,7 +185,7 @@ impl TransactionTypeBuilder {
         let mut consumed = HashSet::new();
 
         // Native asset is always used. (fees)
-        consumed.insert(&XELIS_ASSET);
+        consumed.insert(&TERMINOS_ASSET);
 
         match &self {
             TransactionTypeBuilder::Transfers(transfers) => {
@@ -418,7 +418,7 @@ impl TransactionBuilder {
         transfers: &[TransferWithCommitment],
         deposits: &HashMap<Hash, DepositWithCommitment>,
     ) -> Ciphertext {
-        if asset == &XELIS_ASSET {
+        if asset == &TERMINOS_ASSET {
             // Fees are applied to the native blockchain asset only.
             ct -= Scalar::from(fee);
         }
@@ -448,7 +448,7 @@ impl TransactionBuilder {
                     }
                 }
 
-                if *asset == XELIS_ASSET {
+                if *asset == TERMINOS_ASSET {
                     ct -= Scalar::from(payload.max_gas);
                 }
             },
@@ -464,12 +464,12 @@ impl TransactionBuilder {
                         }
                     }
 
-                    if *asset == XELIS_ASSET {
+                    if *asset == TERMINOS_ASSET {
                         ct -= Scalar::from(invoke.max_gas);
                     }
                 }
 
-                if *asset == XELIS_ASSET {
+                if *asset == TERMINOS_ASSET {
                     ct -= Scalar::from(BURN_PER_CONTRACT);
                 }
             }
@@ -482,7 +482,7 @@ impl TransactionBuilder {
     pub fn get_transaction_cost(&self, fee: u64, asset: &Hash) -> u64 {
         let mut cost = 0;
 
-        if *asset == XELIS_ASSET {
+        if *asset == TERMINOS_ASSET {
             // Fees are applied to the native blockchain asset only.
             cost += fee;
         }
@@ -506,12 +506,12 @@ impl TransactionBuilder {
                     cost += deposit.amount;
                 }
 
-                if *asset == XELIS_ASSET {
+                if *asset == TERMINOS_ASSET {
                     cost += payload.max_gas;
                 }
             },
             TransactionTypeBuilder::DeployContract(payload) => {
-                if *asset == XELIS_ASSET {
+                if *asset == TERMINOS_ASSET {
                     cost += BURN_PER_CONTRACT;
                 }
 
@@ -520,7 +520,7 @@ impl TransactionBuilder {
                         cost += deposit.amount;
                     }
 
-                    if *asset == XELIS_ASSET {
+                    if *asset == TERMINOS_ASSET {
                         cost += invoke.max_gas;
                     }
                 }

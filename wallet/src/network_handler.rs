@@ -21,7 +21,7 @@ use terminos_common::{
         wallet::BalanceChanged,
         RPCTransactionType
     },
-    config::XELIS_ASSET,
+    config::TERMINOS_ASSET,
     crypto::{
         elgamal::Ciphertext,
         Address,
@@ -232,7 +232,7 @@ impl NetworkHandler {
             if let Some(reward) = block.miner_reward {
                 let coinbase = EntryData::Coinbase { reward };
                 let entry = TransactionEntry::new(block_hash.clone(), topoheight, block.timestamp, coinbase);
-                assets_changed.insert(XELIS_ASSET);
+                assets_changed.insert(TERMINOS_ASSET);
 
                 let broadcast = {
                     let mut storage = self.wallet.get_storage().write().await;
@@ -274,7 +274,7 @@ impl NetworkHandler {
             let is_owner = *tx.source.get_public_key() == *address.get_public_key();
             if is_owner {
                 debug!("Transaction {} is from us", tx.hash);
-                assets_changed.insert(XELIS_ASSET);
+                assets_changed.insert(TERMINOS_ASSET);
             }
 
             let entry: Option<EntryData> = match tx.data {

@@ -152,7 +152,7 @@ mod tests {
     use merlin::Transcript;
 
     use crate::{
-        config::XELIS_ASSET,
+        config::TERMINOS_ASSET,
         crypto::{
             proofs::BatchCollector,
             KeyPair
@@ -170,7 +170,7 @@ mod tests {
         // Create proof
         let mut transcript = Transcript::new(b"test");
         let proof = BalanceProof::prove(&keypair, amount, ct.clone(), &mut transcript);
-        let shareable = HumanReadableProof::Balance { proof, asset: XELIS_ASSET, topoheight: 0 };
+        let shareable = HumanReadableProof::Balance { proof, asset: TERMINOS_ASSET, topoheight: 0 };
 
         // Transform to string and back to a shareable proof
         let string = shareable.as_string().unwrap();
@@ -180,7 +180,7 @@ mod tests {
             panic!("Failed to parse the shareable proof");
         };
         assert_eq!(topoheight, 0);
-        assert_eq!(asset, XELIS_ASSET);
+        assert_eq!(asset, TERMINOS_ASSET);
 
         // Verify it
         let mut transcript = Transcript::new(b"test");
@@ -200,7 +200,7 @@ mod tests {
         // Create proof
         let mut transcript = Transcript::new(b"test");
         let proof = OwnershipProof::prove(&keypair, balance, amount, ct.clone(), &mut transcript).unwrap();
-        let shareable = HumanReadableProof::Ownership { proof, asset: XELIS_ASSET, topoheight: 0 };
+        let shareable = HumanReadableProof::Ownership { proof, asset: TERMINOS_ASSET, topoheight: 0 };
 
         // Transform to string and back to a shareable proof
         let string = shareable.as_string().unwrap();
@@ -210,7 +210,7 @@ mod tests {
             panic!("Failed to parse the shareable proof");
         };
         assert_eq!(topoheight, 0);
-        assert_eq!(asset, XELIS_ASSET);
+        assert_eq!(asset, TERMINOS_ASSET);
 
         // Verify it
         let mut transcript = Transcript::new(b"test");

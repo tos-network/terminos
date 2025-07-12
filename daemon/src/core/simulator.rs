@@ -173,7 +173,7 @@ impl Simulator {
 
     //                 transfers.push(Transfer {
     //                     to: keys[n].get_public_key().clone(),
-    //                     asset: XELIS_ASSET,
+    //                     asset: TERMINOS_ASSET,
     //                     amount,
     //                     extra_data: None
     //                 });
@@ -189,7 +189,7 @@ impl Simulator {
     //                     *balance -= total_amount;
     //                 },
     //                 Entry::Vacant(e) => {
-    //                     let balance = storage.get_last_balance(keypair.get_public_key(), &XELIS_ASSET).await.map(|(_, v)| v.get_balance()).unwrap();
+    //                     let balance = storage.get_last_balance(keypair.get_public_key(), &TERMINOS_ASSET).await.map(|(_, v)| v.get_balance()).unwrap();
     //                     let balance = e.insert(balance);
     //                     if *balance < total_amount {
     //                         continue;

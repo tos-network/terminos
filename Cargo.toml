@@ -5,7 +5,8 @@ members = [
     "common",
     "wallet",
     "miner",
-    "daemon"
+    "daemon",
+    "genesis"
 ]
 
 # TODO: temporary until https://github.com/eira-fransham/crunchy/issues/15 is merged
