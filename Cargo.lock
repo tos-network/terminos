@@ -1493,6 +1493,7 @@ dependencies = [
 name = "genesis"
 version = "1.0.0"
 dependencies = [
+ "hex",
  "indexmap 2.9.0",
  "terminos_common",
 ]

@@ -3,6 +3,11 @@ name = "genesis"
 version = "1.0.0"
 edition = "2021"
 
+[[bin]]
+name = "verify_genesis"
+path = "src/verify_genesis.rs"
+
 [dependencies]
 terminos_common = { path = "../common" }
-indexmap = "2.0" 
+indexmap = "2.0"
+hex = "0.4" 
