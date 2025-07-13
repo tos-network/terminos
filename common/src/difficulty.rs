@@ -5,7 +5,7 @@ use thiserror::Error;
 // This type is used to easily switch between u64 and u128 as example
 // And its easier to see where we use the block difficulty
 // Difficulty is a value that represents the amount of work required to mine a block
-// On XELIS, each difficulty point is a hash per second
+// On TOS, each difficulty point is a hash per second
 pub type Difficulty = VarUint;
 // Cumulative difficulty is the sum of all difficulties of all blocks in the chain
 // It is used to determine which branch is the main chain in BlockDAG merging.

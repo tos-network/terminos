@@ -25,13 +25,13 @@ pub fn format_coin(value: u64, decimals: u8) -> String {
     format!("{:.1$}", value as f64 / 10usize.pow(decimals as u32) as f64, decimals as usize)
 }
 
-// Format value using XELIS decimals
-pub fn format_xelis(value: u64) -> String {
+// Format value using TOS decimals
+pub fn format_tos(value: u64) -> String {
     format_coin(value, COIN_DECIMALS)
 }
 
-// Convert a XELIS amount from string to a u64
-pub fn from_xelis(value: impl Into<String>) -> Option<u64> {
+// Convert a TOS amount from string to a u64
+pub fn from_tos(value: impl Into<String>) -> Option<u64> {
     from_coin(value, COIN_DECIMALS)
 }
 
@@ -183,12 +183,12 @@ mod tests {
     }
 
     #[test]
-    fn test_xelis_format() {
-        assert_eq!(format_xelis(FEE_PER_ACCOUNT_CREATION), "0.00100000");
-        assert_eq!(format_xelis(FEE_PER_KB), "0.00010000");
-        assert_eq!(format_xelis(FEE_PER_TRANSFER), "0.00005000");
-        assert_eq!(format_xelis(COIN_VALUE), "1.00000000");
-        assert_eq!(format_xelis(1), "0.00000001");
+    fn test_tos_format() {
+        assert_eq!(format_tos(FEE_PER_ACCOUNT_CREATION), "0.00100000");
+        assert_eq!(format_tos(FEE_PER_KB), "0.00010000");
+        assert_eq!(format_tos(FEE_PER_TRANSFER), "0.00005000");
+        assert_eq!(format_tos(COIN_VALUE), "1.00000000");
+        assert_eq!(format_tos(1), "0.00000001");
     }
 
     #[test]
@@ -216,8 +216,8 @@ mod tests {
     }
 
     #[test]
-    fn test_from_xelis() {
-        let value = from_xelis("100.123");
+    fn test_from_tos() {
+        let value = from_tos("100.123");
         assert_eq!(value, Some(100_123_00000));
     }
 }

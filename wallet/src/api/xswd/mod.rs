@@ -69,8 +69,8 @@ use log::{
 pub use error::XSWDError;
 pub use types::*;
 
-// XSWD Protocol (XELIS Secure WebSocket DApp)
-// is a way to communicate with the XELIS Wallet
+// XSWD Protocol (TERMINOS Secure WebSocket DApp)
+// is a way to communicate with the TERMINOS Wallet
 // from a web browser through a secure websocket.
 // The idea is that a token is generated on websocket side
 // and send through the WS connection to the wallet.

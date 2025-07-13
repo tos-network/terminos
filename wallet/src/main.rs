@@ -57,7 +57,7 @@ use terminos_common::{
     },
     utils::{
         format_coin,
-        format_xelis,
+        format_tos,
         from_coin
     }
 };
@@ -175,7 +175,7 @@ pub struct LogConfig {
     #[serde(default)]
     disable_file_logging: bool,
     /// Disable the log filename date based
-    /// If disabled, the log file will be named xelis-wallet.log instead of YYYY-MM-DD.xelis-wallet.log
+    /// If disabled, the log file will be named terminos-wallet.log instead of YYYY-MM-DD.terminos-wallet.log
     #[clap(long)]
     #[serde(default)]
     disable_file_log_date_based: bool,
@@ -196,10 +196,10 @@ pub struct LogConfig {
     disable_interactive_mode: bool,
     /// Log filename
     /// 
-    /// By default filename is xelis-wallet.log.
+    /// By default filename is terminos-wallet.log.
     /// File will be stored in logs directory, this is only the filename, not the full path.
-    /// Log file is rotated every day and has the format YYYY-MM-DD.xelis-wallet.log.
-    #[clap(long, default_value_t = String::from("xelis-wallet.log"))]
+    /// Log file is rotated every day and has the format YYYY-MM-DD.terminos-wallet.log.
+    #[clap(long, default_value_t = String::from("terminos-wallet.log"))]
     #[serde(default = "default_log_filename")]
     filename_log: String,
     /// Logs directory
@@ -216,7 +216,7 @@ pub struct LogConfig {
 }
 
 #[derive(Parser, Serialize, Deserialize)]
-#[clap(version = VERSION, about = "XELIS is an innovative cryptocurrency built from scratch with BlockDAG, Homomorphic Encryption, Zero-Knowledge Proofs, and Smart Contracts.")]
+#[clap(version = VERSION, about = "Terminos is an innovative cryptocurrency built from scratch with BlockDAG, Homomorphic Encryption, Zero-Knowledge Proofs, and Smart Contracts.")]
 #[command(styles = terminos_common::get_cli_styles())]
 pub struct Config {
     /// RPC Server configuration
@@ -750,7 +750,7 @@ async fn prompt_message_builder(prompt: &Prompt, command_manager: Option<&Comman
             let balance = format!(
                 "{}: {}",
                 prompt.colorize_string(Color::Yellow, "Balance"),
-                prompt.colorize_string(Color::Green, &format_xelis(storage.get_plaintext_balance_for(&TERMINOS_ASSET).await.unwrap_or(0))),
+                prompt.colorize_string(Color::Green, &format_tos(storage.get_plaintext_balance_for(&TERMINOS_ASSET).await.unwrap_or(0))),
             );
             let status = if wallet.is_online().await {
                 prompt.colorize_string(Color::Green, "Online")
@@ -767,7 +767,7 @@ async fn prompt_message_builder(prompt: &Prompt, command_manager: Option<&Comman
             return Ok(
                 format!(
                     "{} | {} | {} | {} | {} {}{} ",
-                    prompt.colorize_string(Color::Blue, "XELIS Wallet"),
+                    prompt.colorize_string(Color::Blue, "TERMINOS Wallet"),
                     addr_str,
                     topoheight_str,
                     balance,
@@ -782,7 +782,7 @@ async fn prompt_message_builder(prompt: &Prompt, command_manager: Option<&Comman
     Ok(
         format!(
             "{} {} ",
-            prompt.colorize_string(Color::Blue, "XELIS Wallet"),
+            prompt.colorize_string(Color::Blue, "TERMINOS Wallet"),
             prompt.colorize_string(Color::BrightBlack, ">>")
         )
     )
@@ -1125,7 +1125,7 @@ async fn transfer(manager: &CommandManager, mut args: ArgumentManager) -> Result
         args.get_value("asset")?.to_hash()?
     } else {
         let asset_name = prompt.read_input(
-            prompt.colorize_string(Color::Green, "Asset (default XELIS): "),
+            prompt.colorize_string(Color::Green, "Asset (default TOS): "),
             false
         ).await?;
         if asset_name.is_empty() {
@@ -1210,7 +1210,7 @@ async fn transfer_all(manager: &CommandManager, mut args: ArgumentManager) -> Re
     let mut asset = args.get_value("asset").and_then(|v| v.to_hash()).ok();
     if asset.is_none() {
         asset = prompt.read_hash(
-           prompt.colorize_string(Color::Green, "Asset (default XELIS): ")
+           prompt.colorize_string(Color::Green, "Asset (default TOS): ")
        ).await.ok();
     }
 
@@ -1238,7 +1238,7 @@ async fn transfer_all(manager: &CommandManager, mut args: ArgumentManager) -> Re
         amount = amount.checked_sub(estimated_fees).context("Insufficient balance to pay fees")?;
     }
 
-    manager.message(format!("Sending {} of {} ({}) to {} (fees: {})", format_coin(amount, asset_data.get_decimals()), asset_data.get_name(), asset, address, format_xelis(estimated_fees)));
+    manager.message(format!("Sending {} of {} ({}) to {} (fees: {})", format_coin(amount, asset_data.get_decimals()), asset_data.get_name(), asset, address, format_tos(estimated_fees)));
 
     if !args.get_flag("confirm")? && !prompt.ask_confirmation().await.context("Error while confirming action")? {
         manager.message("Transaction has been aborted");
@@ -1279,7 +1279,7 @@ async fn burn(manager: &CommandManager, mut args: ArgumentManager) -> Result<(),
         args.get_value("asset")?.to_hash()?
     } else {
         prompt.read_hash(
-            prompt.colorize_string(Color::Green, "Asset (default XELIS): ")
+            prompt.colorize_string(Color::Green, "Asset (default TOS): ")
         ).await.unwrap_or(TERMINOS_ASSET)
     };
 

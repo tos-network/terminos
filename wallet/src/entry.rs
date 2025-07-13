@@ -21,7 +21,7 @@ use terminos_common::{
     transaction::extra_data::PlaintextExtraData,
     utils::{
         format_coin,
-        format_xelis
+        format_tos
     }
 };
 use anyhow::Result;
@@ -471,16 +471,16 @@ impl TransactionEntry {
 
     pub async fn summary(&self, mainnet: bool, storage: &EncryptedStorage) -> Result<String> {
         let entry_str = match self.get_entry() {
-            EntryData::Coinbase { reward } => format!("Coinbase {} XELIS", format_xelis(*reward)),
+            EntryData::Coinbase { reward } => format!("Coinbase {} TOS", format_tos(*reward)),
             EntryData::Burn { asset, amount, fee, nonce } => {
                 let data = storage.get_asset(asset).await?;
-                format!("Fee: {}, Nonce: {} Burn {} {} ({})", format_xelis(*fee), nonce, format_coin(*amount, data.get_decimals()), data.get_name(), asset)
+                format!("Fee: {}, Nonce: {} Burn {} {} ({})", format_tos(*fee), nonce, format_coin(*amount, data.get_decimals()), data.get_name(), asset)
             },
             EntryData::Incoming { from, transfers } => {
                 let mut str = String::new();
                 for transfer in transfers {
                     if *transfer.get_asset() == TERMINOS_ASSET {
-                        str.push_str(&format!("Received {} XELIS from {}", format_xelis(transfer.get_amount()), from.as_address(mainnet)));
+                        str.push_str(&format!("Received {} TOS from {}", format_tos(transfer.get_amount()), from.as_address(mainnet)));
                     } else {
                         let data = storage.get_asset(transfer.get_asset()).await?;
                         str.push_str(&format!("Received {} {} ({}) from {}", format_coin(transfer.get_amount(), data.get_decimals()), data.get_name(), transfer.get_asset(), from.as_address(mainnet)));
@@ -489,10 +489,10 @@ impl TransactionEntry {
                 str
             },
             EntryData::Outgoing { transfers, fee, nonce } => {
-                let mut str = format!("Fee: {}, Nonce: {} ", format_xelis(*fee), nonce);
+                let mut str = format!("Fee: {}, Nonce: {} ", format_tos(*fee), nonce);
                 for transfer in transfers {
                     if *transfer.get_asset() == TERMINOS_ASSET {
-                        str.push_str(&format!("Sent {} XELIS to {}", format_xelis(transfer.get_amount()), transfer.get_destination().as_address(mainnet)));
+                        str.push_str(&format!("Sent {} TOS to {}", format_tos(transfer.get_amount()), transfer.get_destination().as_address(mainnet)));
                     } else {
                         let data = storage.get_asset(transfer.get_asset()).await?;
                         str.push_str(&format!("Sent {} {} ({}) to {}", format_coin(transfer.get_amount(), data.get_decimals()), data.get_name(), transfer.get_asset(), transfer.get_destination().as_address(mainnet)));
@@ -501,7 +501,7 @@ impl TransactionEntry {
                 str
             },
             EntryData::MultiSig { participants, threshold, fee, nonce } => {
-                let mut str = format!("Fee: {}, Nonce: {} ", format_xelis(*fee), nonce);
+                let mut str = format!("Fee: {}, Nonce: {} ", format_tos(*fee), nonce);
                 str.push_str(&format!("MultiSig setup with threshold {} and {} participants", threshold, participants.len()));
                 for participant in participants {
                     str.push_str(&format!("{}", participant.as_address(mainnet)));
@@ -509,8 +509,8 @@ impl TransactionEntry {
                 str
             },
             EntryData::InvokeContract { contract, deposits, chunk_id, fee, max_gas, nonce } => {
-                let mut str = format!("Fee: {}, Nonce: {} ", format_xelis(*fee), nonce);
-                str.push_str(&format!("Invoke contract {} with chunk id {} (max gas: {})", contract, chunk_id, format_xelis(*max_gas)));
+                let mut str = format!("Fee: {}, Nonce: {} ", format_tos(*fee), nonce);
+                str.push_str(&format!("Invoke contract {} with chunk id {} (max gas: {})", contract, chunk_id, format_tos(*max_gas)));
                 for (asset, amount) in deposits {
                     let data = storage.get_asset(&asset).await?;
                     str.push_str(&format!("Deposit {} {} ({}) to contract", format_coin(*amount, data.get_decimals()), data.get_name(), asset));
@@ -518,7 +518,7 @@ impl TransactionEntry {
                 str
             },
             EntryData::DeployContract { fee, nonce } => {
-                format!("Fee: {}, Nonce: {} Deploy contract", format_xelis(*fee), nonce)
+                format!("Fee: {}, Nonce: {} Deploy contract", format_tos(*fee), nonce)
             }
         };
 

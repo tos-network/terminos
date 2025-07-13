@@ -157,16 +157,16 @@ mod tests {
 
     #[test]
     fn test_various_asset_names() {
-        assert!(is_valid_str_for_asset("XELIS", true, false));
-        assert!(is_valid_str_for_asset("XELISAI99", true, false));
-        assert!(is_valid_str_for_asset("XELIS POW 123", true, false));
+        assert!(is_valid_str_for_asset("TOS", true, false));
+        assert!(is_valid_str_for_asset("TOSAI99", true, false));
+        assert!(is_valid_str_for_asset("TOS POW 123", true, false));
         assert!(is_valid_str_for_asset("ZZZZZZ", true, true));
 
         // check only uppercase
         assert!(!is_valid_str_for_asset("ZZZZZZzzzZ", true, true));
 
         // check whitespaces
-        assert!(!is_valid_str_for_asset(" XELIS", true, false));
-        assert!(!is_valid_str_for_asset("XELIS   ", true, false));
+        assert!(!is_valid_str_for_asset(" TOS", true, false));
+        assert!(!is_valid_str_for_asset("TOS   ", true, false));
     }
 }

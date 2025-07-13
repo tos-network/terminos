@@ -43,7 +43,7 @@ use terminos_common::{
     transaction::Transaction,
     utils::{
         format_hashrate,
-        format_xelis,
+        format_tos,
         format_difficulty
     }
 };
@@ -85,7 +85,7 @@ use anyhow::{
 
 // Functions helpers for serde default values
 fn default_filename_log() -> String {
-    "xelis-daemon.log".to_owned()
+    "terminos-daemon.log".to_owned()
 }
 
 fn default_logs_path() -> String {
@@ -114,7 +114,7 @@ pub struct LogConfig {
     #[serde(default)]
     disable_file_logging: bool,
     /// Disable the log filename date based
-    /// If disabled, the log file will be named xelis-daemon.log instead of YYYY-MM-DD.xelis-daemon.log
+    /// If disabled, the log file will be named terminos-daemon.log instead of YYYY-MM-DD.terminos-daemon.log
     #[clap(long)]
     #[serde(default)]
     disable_file_log_date_based: bool,
@@ -135,10 +135,10 @@ pub struct LogConfig {
     auto_compress_logs: bool,
     /// Log filename
     /// 
-    /// By default filename is xelis-daemon.log.
+    /// By default filename is terminos-daemon.log.
     /// File will be stored in logs directory, this is only the filename, not the full path.
-    /// Log file is rotated every day and has the format YYYY-MM-DD.xelis-daemon.log.
-    #[clap(long, default_value_t = String::from("xelis-daemon.log"))]
+    /// Log file is rotated every day and has the format YYYY-MM-DD.terminos-daemon.log.
+    #[clap(long, default_value_t = String::from("terminos-daemon.log"))]
     #[serde(default = "default_filename_log")]
     filename_log: String,
     /// Logs directory
@@ -155,7 +155,7 @@ pub struct LogConfig {
 }
 
 #[derive(Parser, Serialize, Deserialize)]
-#[clap(version = VERSION, about = "XELIS is an innovative cryptocurrency built from scratch with BlockDAG, Homomorphic Encryption, Zero-Knowledge Proofs, and Smart Contracts.")]
+#[clap(version = VERSION, about = "Terminos is an innovative cryptocurrency built from scratch with BlockDAG, Homomorphic Encryption, Zero-Knowledge Proofs, and Smart Contracts.")]
 #[command(styles = terminos_common::get_cli_styles())]
 pub struct CliConfig {
     /// Blockchain core configuration
@@ -254,7 +254,7 @@ async fn main() -> Result<()> {
         log_config.file_log_level.unwrap_or(log_config.log_level)
     )?;
 
-    info!("XELIS Blockchain running version: {}", VERSION);
+    info!("TERMINOS Blockchain running version: {}", VERSION);
     info!("----------------------------------------------");
 
     let storage = {
@@ -459,7 +459,7 @@ fn build_prompt_message(
 
     format!(
         "{} | {} | {} | {} | {}{}{}{}{}{} ",
-        prompt.colorize_string(Color::Blue, "XELIS"),
+        prompt.colorize_string(Color::Blue, "TERMINOS"),
         topoheight_str,
         network_hashrate_str,
         mempool_str,
@@ -504,7 +504,7 @@ async fn verify_chain<S: Storage>(manager: &CommandManager, mut args: ArgumentMa
             let expected_block_reward = storage.get_block_reward_at_topo_height(topo).context("Error while retrieving block reward")?;
             // Verify the saved block reward
             if block_reward != expected_block_reward {
-                manager.error(format!("Block reward saved is incorrect for {} at topoheight {}, got {} while expecting {}", hash_at_topo, topo, format_xelis(block_reward), format_xelis(expected_block_reward)));
+                manager.error(format!("Block reward saved is incorrect for {} at topoheight {}, got {} while expecting {}", hash_at_topo, topo, format_tos(block_reward), format_tos(expected_block_reward)));
                 return Ok(())
             }
             block_reward
@@ -521,7 +521,7 @@ async fn verify_chain<S: Storage>(manager: &CommandManager, mut args: ArgumentMa
 
         // Verify the supply at block
         if supply != expected_supply {
-            manager.error(format!("Error for block {} at topoheight {}, expected supply {} found {}", hash_at_topo, topo, format_xelis(expected_supply), format_xelis(supply)));
+            manager.error(format!("Error for block {} at topoheight {}, expected supply {} found {}", hash_at_topo, topo, format_tos(expected_supply), format_tos(supply)));
             return Ok(())
         }
 
@@ -564,7 +564,7 @@ async fn verify_chain<S: Storage>(manager: &CommandManager, mut args: ArgumentMa
         expected_burned_supply += burned_sum;
 
         if burned_supply != expected_burned_supply {
-            manager.error(format!("Error for block {} at topoheight {}, expected burned supply {} found {}", hash_at_topo, topo, format_xelis(expected_burned_supply), format_xelis(burned_supply)));
+            manager.error(format!("Error for block {} at topoheight {}, expected burned supply {} found {}", hash_at_topo, topo, format_tos(expected_burned_supply), format_tos(burned_supply)));
             return Ok(())
         }
     }
@@ -617,7 +617,7 @@ async fn print_balance<S: Storage>(manager: &CommandManager, _: ArgumentManager)
     let topoheight: u64 = prompt.read("Topoheight: ").await
         .context("Error while reading topoheight")?;
 
-    let asset = prompt.read_hash("Asset (default XELIS): ").await.ok();
+    let asset = prompt.read_hash("Asset (default TOS): ").await.ok();
     let asset = asset.unwrap_or(TERMINOS_ASSET);
 
     let balance = storage.get_balance_at_exact_topoheight(&address.to_public_key(), &asset, topoheight).await
@@ -944,7 +944,7 @@ async fn show_balance<S: Storage>(manager: &CommandManager, mut arguments: Argum
 
     // Read asset
     let asset = prompt.read_hash(
-        prompt.colorize_string(Color::Green, "Asset (default XELIS): ")
+        prompt.colorize_string(Color::Green, "Asset (default TOS): ")
     ).await.ok();
 
     let asset = asset.unwrap_or(TERMINOS_ASSET);
@@ -1142,10 +1142,10 @@ async fn status<S: Storage>(manager: &CommandManager, _: ArgumentManager) -> Res
     manager.message(format!("Top block hash: {}", top_block_hash));
     manager.message(format!("Average Block Time: {:.2}s", avg_block_time as f64 / MILLIS_PER_SECOND as f64));
     manager.message(format!("Target Block Time: {:.2}s", BLOCK_TIME_MILLIS as f64 / MILLIS_PER_SECOND as f64));
-    manager.message(format!("Emitted Supply: {} XELIS", format_xelis(emitted_supply)));
-    manager.message(format!("Burned Supply: {} XELIS", format_xelis(burned_supply)));
-    manager.message(format!("Circulating Supply: {} XELIS", format_xelis(emitted_supply - burned_supply)));
-    manager.message(format!("Current Block Reward: {} XELIS", format_xelis(get_block_reward(emitted_supply))));
+    manager.message(format!("Emitted Supply: {} TOS", format_tos(emitted_supply)));
+    manager.message(format!("Burned Supply: {} TOS", format_tos(burned_supply)));
+    manager.message(format!("Circulating Supply: {} TOS", format_tos(emitted_supply - burned_supply)));
+    manager.message(format!("Current Block Reward: {} TOS", format_tos(get_block_reward(emitted_supply))));
     manager.message(format!("Accounts/Transactions/Blocks/Assets/Contracts: {}/{}/{}/{}/{}", accounts_count, transactions_count, blocks_count, assets, contracts));
     manager.message(format!("Block Version: {}", version));
     manager.message(format!("POW Algorithm: {}", get_pow_algorithm_for_version(version)));

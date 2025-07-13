@@ -88,7 +88,7 @@ pub struct SledStorage {
     // block reward for each block topoheight
     pub(super) rewards: Tree,
     // supply for each block topoheight
-    // This is only used by XELIS due to the minting at EVERY block
+    // This is only used by TOS due to the minting at EVERY block
     // topoheight->supply
     pub(super) supply: Tree,
     // Supply tracked for each asset

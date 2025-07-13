@@ -142,7 +142,7 @@ pub struct RPCTransaction<'a> {
     pub source: Address,
     /// Type of the transaction
     pub data: RPCTransactionType<'a>,
-    /// Fees in XELIS
+    /// Fees in TOS
     pub fee: u64,
     /// nonce must be equal to the one on chain account
     /// used to prevent replay attacks and have ordered transactions

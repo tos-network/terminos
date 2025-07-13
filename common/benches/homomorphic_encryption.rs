@@ -2,7 +2,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use curve25519_dalek::Scalar;
 use terminos_common::crypto::KeyPair;
 
-// Current Homomorphic Encryption operations used by XELIS network
+// Current Homomorphic Encryption operations used by TOS network
 // Those are based on the Twisted elGamal encryption scheme. 
 fn bench_he_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("he_operations");

@@ -226,7 +226,7 @@ impl NetworkHandler {
         // Prevent storing changes multiple times
         let mut changes_stored = false;
 
-        // create Coinbase entry if its our address and we're looking for XELIS asset
+        // create Coinbase entry if its our address and we're looking for TOS asset
         if miner == *address.get_public_key() {
             debug!("Block {} at topoheight {} is mined by us", block_hash, topoheight);
             if let Some(reward) = block.miner_reward {

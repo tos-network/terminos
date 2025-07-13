@@ -1128,7 +1128,7 @@ async fn get_account_history<S: Storage>(context: &Context, body: Value) -> Resu
         // we will scan it below for transactions and rewards
         let (hash, block_header) = storage.get_block_header_at_topoheight(topo).await.context(format!("Error while retrieving block header at topo height {topo}"))?;
 
-        // Block reward is only paid in XELIS
+        // Block reward is only paid in TOS
         if params.asset == TERMINOS_ASSET {
             let is_miner = *block_header.get_miner() == *key;
             if (is_miner || is_dev_address) && params.incoming_flow {

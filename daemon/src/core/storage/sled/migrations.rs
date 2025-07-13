@@ -18,12 +18,12 @@ impl SledStorage {
         if migrate {
             warn!("Migrating data");
             let ticker = match self.network {
-                Network::Mainnet => "XEL".to_owned(),
-                _ => "XET".to_owned(),
+                Network::Mainnet => "TOS".to_owned(),
+                _ => "TOT".to_owned(),
             };
 
-            // We need to patch the ticker for XELIS asset
-            let data = AssetData::new(COIN_DECIMALS, "XELIS".to_owned(), ticker, Some(MAXIMUM_SUPPLY), None);
+            // We need to patch the ticker for TOS asset
+            let data = AssetData::new(COIN_DECIMALS, "TOS".to_owned(), ticker, Some(MAXIMUM_SUPPLY), None);
             let key = Self::get_asset_key(&TERMINOS_ASSET, 0);
 
             self.versioned_assets.insert(&key, VersionedAssetData::new(data, None).to_bytes())?;

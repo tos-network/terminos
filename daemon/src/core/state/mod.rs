@@ -14,7 +14,7 @@ use terminos_common::{
     crypto::{Hash, PublicKey},
     transaction::{Reference, Transaction},
     block::{TopoHeight, BlockVersion},
-    utils::format_xelis
+    utils::format_tos
 };
 
 use super::{
@@ -35,7 +35,7 @@ pub (super) async fn pre_verify_tx<P: AccountProvider + BalanceProvider>(provide
 
     let required_fees = blockchain::estimate_required_tx_fees(provider, topoheight, tx, block_version).await?;
     if required_fees > tx.get_fee() {
-        debug!("Invalid fees: {} required, {} provided", format_xelis(required_fees), format_xelis(tx.get_fee()));
+        debug!("Invalid fees: {} required, {} provided", format_tos(required_fees), format_tos(tx.get_fee()));
         return Err(BlockchainError::InvalidTxFee(required_fees, tx.get_fee()));
     }
 

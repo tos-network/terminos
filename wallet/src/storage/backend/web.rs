@@ -26,7 +26,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
     target_vendor = "unknown",
     target_os = "unknown"
 ))]
-const PREFIX_DB_KEY: &'static str = "___xelis_db___";
+const PREFIX_DB_KEY: &'static str = "___terminos_db___";
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IVec(Arc<Vec<u8>>);
@@ -517,7 +517,7 @@ mod tests {
         assert!(tree.is_empty());
         assert_eq!(tree.len(), 0);
 
-        tree.insert("xelis", "silex").unwrap();
+        tree.insert("tos", "sot").unwrap();
         assert_eq!(tree.len(), 1);
 
         tree.clear().unwrap();
@@ -548,7 +548,7 @@ mod tests {
 
         let tree = db.open_tree("test").unwrap();
         tree.insert("test", "test").unwrap();
-        tree.insert("xelis", "silex").unwrap();
+        tree.insert("tos", "sot").unwrap();
 
         let mut buffer = Vec::new();
         let mut writer = Writer::new(&mut buffer);
@@ -564,8 +564,8 @@ mod tests {
         assert_eq!(tree.name(), b"test".into());
         assert_eq!(tree.len(), 2);
         assert_eq!(tree.get("test").unwrap().unwrap(), b"test".into());
-        assert_eq!(tree.contains_key("xelis").unwrap(), true);
-        assert_eq!(tree.get("xelis").unwrap().unwrap(), b"silex".into());
+        assert_eq!(tree.contains_key("tos").unwrap(), true);
+        assert_eq!(tree.get("tos").unwrap().unwrap(), b"sot".into());
 
         assert_eq!(db.get("hello").unwrap().unwrap(), b"world".into());
         db.flush().unwrap();

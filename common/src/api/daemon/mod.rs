@@ -244,17 +244,17 @@ pub struct GetInfoResult {
     pub stableheight: u64,
     pub pruned_topoheight: Option<TopoHeight>,
     pub top_block_hash: Hash,
-    // Current XELIS circulating supply
+    // Current TOS circulating supply
     // This is calculated by doing
     // emitted_supply - burned_supply
     pub circulating_supply: u64,
-    // Burned XELIS supply
+    // Burned TOS supply
     #[serde(default)]
     pub burned_supply: u64,
-    // Emitted XELIS supply
+    // Emitted TOS supply
     #[serde(default)]
     pub emitted_supply: u64,
-    // Maximum supply of XELIS
+    // Maximum supply of TOS
     pub maximum_supply: u64,
     // Current difficulty at tips
     pub difficulty: Difficulty,
@@ -364,14 +364,14 @@ pub struct TransactionResponse<'a> {
     pub data: RPCTransaction<'a>
 }
 
-fn default_xelis_asset() -> Hash {
+fn default_tos_asset() -> Hash {
     crate::config::TERMINOS_ASSET
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct GetAccountHistoryParams {
     pub address: Address,
-    #[serde(default = "default_xelis_asset")]
+    #[serde(default = "default_tos_asset")]
     pub asset: Hash,
     pub minimum_topoheight: Option<TopoHeight>,
     pub maximum_topoheight: Option<TopoHeight>,

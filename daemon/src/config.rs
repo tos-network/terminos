@@ -228,9 +228,7 @@ const TESTNET_GENESIS_BLOCK: &str = "0000000000000000000000018f116b47cf000000000
 
 // Genesis block hash for both networks
 // It must be the same as the hash of the genesis block
-//const MAINNET_GENESIS_BLOCK_HASH: Hash = Hash::new([175, 118, 37, 203, 175, 200, 25, 148, 9, 202, 29, 120, 93, 128, 36, 209, 146, 193, 217, 36, 61, 51, 24, 194, 114, 113, 121, 208, 237, 163, 27, 55]);
 const MAINNET_GENESIS_BLOCK_HASH: Hash = Hash::new([123, 111, 199, 253, 98, 37, 114, 152, 179, 226, 64, 94, 57, 131, 108, 241, 153, 243, 177, 108, 175, 198, 106, 4, 165, 113, 220, 59, 249, 217, 57, 252]);
-
 const TESTNET_GENESIS_BLOCK_HASH: Hash = Hash::new([171, 50, 219, 186, 28, 164, 189, 225, 197, 167, 187, 143, 213, 59, 217, 238, 51, 242, 133, 181, 188, 235, 151, 50, 110, 33, 185, 188, 100, 146, 23, 132]);
 
 // Genesis block getter

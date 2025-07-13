@@ -27,7 +27,7 @@ use terminos_common::{
         Reference,
         Transaction
     },
-    utils::format_xelis,
+    utils::format_tos,
     versioned_type::VersionedState,
 };
 use xelis_environment::Environment;
@@ -317,7 +317,7 @@ impl<'a, S: Storage> ChainState<'a, S> {
 
     // Reward a miner for the block mined
     pub async fn reward_miner(&mut self, miner: &'a PublicKey, reward: u64) -> Result<(), BlockchainError> {
-        debug!("Rewarding miner {} with {} XEL at topoheight {}", miner.as_address(self.storage.is_mainnet()), format_xelis(reward), self.topoheight);
+        debug!("Rewarding miner {} with {} TOS at topoheight {}", miner.as_address(self.storage.is_mainnet()), format_tos(reward), self.topoheight);
         let miner_balance = self.internal_get_receiver_balance(Cow::Borrowed(miner), Cow::Borrowed(&TERMINOS_ASSET)).await?;
         *miner_balance += reward;
 

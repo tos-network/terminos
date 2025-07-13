@@ -28,7 +28,7 @@ pub const BULLET_PROOF_SIZE: usize = 64;
 
 lazy_static! {
     // Bulletproof generators: party size is max transfers * 2 + 1
-    // * 2 in case each transfer use a unique asset + 1 for xelis asset as fee and + 1 to be a power of 2
+    // * 2 in case each transfer use a unique asset + 1 for tos asset as fee and + 1 to be a power of 2
     pub static ref BP_GENS: BulletproofGens = BulletproofGens::new(BULLET_PROOF_SIZE, MAX_TRANSFER_COUNT * 2 + 2);
     pub static ref PC_GENS: PedersenGens = PedersenGens::default();
 }

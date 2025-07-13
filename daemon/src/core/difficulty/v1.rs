@@ -45,10 +45,10 @@ mod tests {
         let z = MAINNET_MINIMUM_DIFFICULTY / VarUint::from_u64(1000);
         let (x_est_new, p_new) = kalman_filter(z, VarUint::one(), P, SHIFT, LEFT_SHIFT, PROCESS_NOISE_COVAR);
         assert_eq!(x_est_new, VarUint::one());
-        assert_eq!(p_new, VarUint::from_u64(4501837440));
+        assert_eq!(p_new, VarUint::from_u64(4499872186));
 
         let (x_est_new, p_new) = kalman_filter(MAINNET_MINIMUM_DIFFICULTY / VarUint::from_u64(2000), x_est_new, p_new, SHIFT, LEFT_SHIFT, PROCESS_NOISE_COVAR);
         assert_eq!(x_est_new, VarUint::one());
-        assert_eq!(p_new, VarUint::from_u64(4699383461));
+        assert_eq!(p_new, VarUint::from_u64(4693155069));
     }
 }

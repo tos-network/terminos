@@ -80,7 +80,7 @@ impl fmt::Display for Algorithm {
     }
 }
 
-// This structure is used by xelis-miner which allow to compute a valid block POW hash
+// This structure is used by termios-miner which allow to compute a valid block POW hash
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MinerWork<'a> {
     header_work_hash: Hash, // include merkle tree of tips, txs, and height (immutable)

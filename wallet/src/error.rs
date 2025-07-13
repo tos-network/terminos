@@ -5,7 +5,7 @@ use super::network_handler::NetworkError;
 use terminos_common::{
     crypto::Hash,
     transaction::extra_data::CipherFormatError,
-    utils::{format_coin, format_xelis}
+    utils::{format_coin, format_tos}
 };
 #[cfg(feature = "api_server")]
 use terminos_common::rpc_server::InternalRpcError;
@@ -51,7 +51,7 @@ pub enum WalletError {
     NoSaltFound,
     #[error("Your wallet contains only {} instead of {} for asset {}", format_coin(*_0, *_2), format_coin(*_1, *_2), _3)]
     NotEnoughFunds(u64, u64, u8, Hash),
-    #[error("Your wallet don't have enough funds to pay fees: expected {} but have only {}", format_xelis(*_0), format_xelis(*_1))]
+    #[error("Your wallet don't have enough funds to pay fees: expected {} but have only {}", format_tos(*_0), format_tos(*_1))]
     NotEnoughFundsForFee(u64, u64),
     #[error("Invalid address params")]
     InvalidAddressParams,
@@ -73,7 +73,7 @@ pub enum WalletError {
     RPCServerNotRunning,
     #[error("RPC Server is already running")]
     RPCServerAlreadyRunning,
-    #[error("Invalid fees provided, minimum fees calculated: {}, provided: {}", format_xelis(*_0), format_xelis(*_1))]
+    #[error("Invalid fees provided, minimum fees calculated: {}, provided: {}", format_tos(*_0), format_tos(*_1))]
     InvalidFeeProvided(u64, u64),
     #[error("Wallet name cannot be empty")]
     EmptyName,

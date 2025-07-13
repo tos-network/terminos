@@ -53,7 +53,7 @@ pub struct CipherFormatError;
 
 /// Every transfer has its associated secret key, derived from the shared secret.
 /// We never use a key twice, then. We can reuse the same nonce everytime.
-const NONCE: &[u8; 12] = b"xelis-crypto";
+const NONCE: &[u8; 12] = b"tos-crypto-1";
 
 /// This is the encrypted data, which is the result of the encryption process.
 /// It is a simple wrapper around a vector of bytes.

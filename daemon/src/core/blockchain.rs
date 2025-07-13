@@ -63,7 +63,7 @@ use terminos_common::{
         Transaction,
         TransactionType
     },
-    utils::{calculate_tx_fee, format_xelis},
+    utils::{calculate_tx_fee, format_tos},
     tokio::{spawn_task, is_multi_threads_supported},
     varuint::VarUint,
     contract::build_environment,
@@ -526,18 +526,18 @@ impl<S: Storage> Blockchain<S> {
     async fn create_genesis_block(&self, genesis_hex: Option<&str>) -> Result<(), BlockchainError> {
         let mut storage = self.storage.write().await;
 
-        // register XELIS asset
-        debug!("Registering XELIS asset: {} at topoheight 0", TERMINOS_ASSET);
+        // register TOS asset
+        debug!("Registering TOS asset: {} at topoheight 0", TERMINOS_ASSET);
         let ticker = match self.network {
-            Network::Mainnet => "XEL".to_owned(),
-            _ => "XET".to_owned(),
+            Network::Mainnet => "TOS".to_owned(),
+            _ => "TOT".to_owned(),
         };
 
         storage.add_asset(
             &TERMINOS_ASSET,
             0,
             VersionedAssetData::new(
-                AssetData::new(COIN_DECIMALS, "XELIS".to_owned(), ticker, Some(MAXIMUM_SUPPLY), None),
+                AssetData::new(COIN_DECIMALS, "TOS".to_owned(), ticker, Some(MAXIMUM_SUPPLY), None),
                 None
             )
         ).await?;
@@ -718,14 +718,14 @@ impl<S: Storage> Blockchain<S> {
         &self.network
     }
 
-    // Get the current emitted supply of XELIS at current topoheight
+    // Get the current emitted supply of TOS at current topoheight
     pub async fn get_supply(&self) -> Result<u64, BlockchainError> {
         trace!("get supply");
         let storage = self.storage.read().await;
         storage.get_supply_at_topo_height(self.get_topo_height()).await
     }
 
-    // Get the current burned supply of XELIS at current topoheight
+    // Get the current burned supply of TOS at current topoheight
     pub async fn get_burned_supply(&self) -> Result<u64, BlockchainError> {
         trace!("get burned supply");
         let storage = self.storage.read().await;
@@ -1680,7 +1680,7 @@ impl<S: Storage> Blockchain<S> {
                     }
                 }
 
-                trace!("Selected {} (nonce: {}, fees: {}) for mining", hash, tx.get_nonce(), format_xelis(tx.get_fee()));
+                trace!("Selected {} (nonce: {}, fees: {}) for mining", hash, tx.get_nonce(), format_tos(tx.get_fee()));
                 // TODO no clone
                 block.txs_hashes.insert(hash.as_ref().clone());
                 block_size += HASH_SIZE; // add the hash size
@@ -3065,7 +3065,7 @@ mod tests {
         assert_eq!(get_block_dev_fee(55_000), 10);
 
         // End of the first threshold, we pass to 5%
-        assert_eq!(get_block_dev_fee(3_250_000), 5);
+        assert_eq!(get_block_dev_fee(3_942_000), 5);
 
         assert_eq!(get_block_dev_fee(DEV_FEES[0].height), 10);
         assert_eq!(get_block_dev_fee(DEV_FEES[1].height), 5);

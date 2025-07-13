@@ -131,7 +131,7 @@ pub struct LogConfig {
     #[serde(default)]
     disable_file_logging: bool,
     /// Disable the log filename date based
-    /// If disabled, the log file will be named xelis-miner.log instead of YYYY-MM-DD.xelis-miner.log
+    /// If disabled, the log file will be named terminos-miner.log instead of YYYY-MM-DD.terminos-miner.log
     #[clap(long)]
     #[serde(default)]
     disable_file_log_date_based: bool,
@@ -152,10 +152,10 @@ pub struct LogConfig {
     disable_interactive_mode: bool,
     /// Log filename
     /// 
-    /// By default filename is xelis-miner.log.
+    /// By default filename is terminos-miner.log.
     /// File will be stored in logs directory, this is only the filename, not the full path.
-    /// Log file is rotated every day and has the format YYYY-MM-DD.xelis-miner.log.
-    #[clap(default_value_t = String::from("xelis-miner.log"))]
+    /// Log file is rotated every day and has the format YYYY-MM-DD.terminos-miner.log.
+    #[clap(default_value_t = String::from("terminos-miner.log"))]
     #[serde(default = "default_log_filename")]
     filename_log: String,
     /// Logs directory
@@ -699,7 +699,7 @@ async fn run_prompt(prompt: ShareablePrompt) -> Result<()> {
         Ok(
             format!(
                 "{} | {} | {} | {} | {} | {} {} ",
-                prompt.colorize_string(Color::Blue, "XELIS Miner"),
+                prompt.colorize_string(Color::Blue, "TERMINOS Miner"),
                 topoheight_str,
                 blocks_found,
                 blocks_rejected,

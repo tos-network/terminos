@@ -52,7 +52,7 @@ pub enum Role {
     Receiver,
 }
 
-// this enum represent all types of transaction available on XELIS Network
+// this enum represent all types of transaction available on TOS Network
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum TransactionType {
@@ -72,7 +72,7 @@ pub struct Transaction {
     source: CompressedPublicKey,
     /// Type of the transaction
     data: TransactionType,
-    /// Fees in XELIS
+    /// Fees in TOS
     fee: u64,
     /// nonce must be equal to the one on chain account
     /// used to prevent replay attacks and have ordered transactions
@@ -182,7 +182,7 @@ impl Transaction {
     // Get the burned amount
     // This will returns the burned amount by a Burn payload
     // Or the % of execution fees to burn due to a Smart Contracts call
-    // only if the asset is XELIS
+    // only if the asset is TOS
     pub fn get_burned_amount(&self, asset: &Hash) -> Option<u64> {
         match &self.data {
             TransactionType::Burn(payload) if payload.asset == *asset => Some(payload.amount),

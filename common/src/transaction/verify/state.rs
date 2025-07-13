@@ -134,10 +134,10 @@ pub struct ContractEnvironment<'a, P: ContractProvider> {
 
 #[async_trait]
 pub trait BlockchainApplyState<'a, P: ContractProvider, E>: BlockchainVerificationState<'a, E> {
-    /// Add burned XELIS
+    /// Add burned TOS
     async fn add_burned_coins(&mut self, amount: u64) -> Result<(), E>;
 
-    /// Add fee XELIS
+    /// Add fee TOS
     async fn add_gas_fee(&mut self, amount: u64) -> Result<(), E>;
 
     /// Get the hash of the block
