@@ -440,6 +440,11 @@ impl NetworkHandler {
                     } else {
                         None
                     }
+                },
+                RPCTransactionType::Energy(_) => {
+                    // Energy operations don't create wallet entries
+                    // They are handled by the energy module
+                    None
                 }
             };
 

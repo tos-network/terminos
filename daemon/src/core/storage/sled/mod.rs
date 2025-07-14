@@ -10,12 +10,13 @@ use crate::{
 };
 use terminos_common::{
     block::{TopoHeight, Block, BlockHeader},
-    crypto::Hash,
+    crypto::{Hash, PublicKey},
     difficulty::{CumulativeDifficulty, Difficulty},
     immutable::Immutable,
     network::Network,
     serializer::Serializer,
-    transaction::Transaction
+    transaction::Transaction,
+    account::EnergyResource,
 };
 use std::{
     hash::Hash as StdHash,
@@ -145,6 +146,13 @@ pub struct SledStorage {
     // Contract outputs per TX
     // Key is the TX Hash that called the contract, value is a list of contract outputs
     pub(super) contracts_outputs: Tree,
+    // Energy resources for accounts
+    // Key is the account public key, value is the latest energy resource topoheight
+    pub(super) energy_resources: Tree,
+    // Versioned energy resources
+    // Key is prefixed by the topoheight for fast scan_prefix search
+    // value is the energy resource
+    pub(super) versioned_energy_resources: Tree,
     // opened DB used for assets to create dynamic assets
     pub(super) db: sled::Db,
 
@@ -249,6 +257,8 @@ impl SledStorage {
             contracts_balances: sled.open_tree("contracts_balances")?,
             versioned_contracts_balances: sled.open_tree("versioned_contracts_balances")?,
             contracts_outputs: sled.open_tree("contracts_outputs")?,
+            energy_resources: sled.open_tree("energy_resources")?,
+            versioned_energy_resources: sled.open_tree("versioned_energy_resources")?,
             assets_supply: sled.open_tree("assets_supply")?,
             versioned_assets_supply: sled.open_tree("versioned_assets_supply")?,
             db: sled,
@@ -928,6 +938,41 @@ impl Storage for SledStorage {
         trace!("flush sled");
         let n = self.db.flush_async().await?;
         debug!("Flushed {} bytes", n);
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl EnergyProvider for SledStorage {
+    async fn get_energy_resource(&self, account: &PublicKey) -> Result<Option<EnergyResource>, BlockchainError> {
+        trace!("get energy resource for account {}", account.as_address(self.network.is_mainnet()));
+        
+        // Get the latest topoheight for this account's energy resource
+        let topoheight = self.load_optional_from_disk::<u64>(&self.energy_resources, &account.to_bytes())?;
+        
+        match topoheight {
+            Some(topoheight) => {
+                // Get the versioned energy resource at that topoheight
+                let key = format!("{}_{}", topoheight, account.as_address(self.network.is_mainnet()));
+                let energy = self.load_optional_from_disk::<EnergyResource>(&self.versioned_energy_resources, key.as_bytes())?;
+                Ok(energy)
+            },
+            None => Ok(None)
+        }
+    }
+
+    async fn set_energy_resource(&mut self, account: &PublicKey, topoheight: TopoHeight, energy: &EnergyResource) -> Result<(), BlockchainError> {
+        trace!("set energy resource for account {} at topoheight {}: {:?}", 
+               account.as_address(self.network.is_mainnet()), topoheight, energy);
+        
+        // Store the versioned energy resource
+        let key = format!("{}_{}", topoheight, account.as_address(self.network.is_mainnet()));
+        let bytes = energy.to_bytes();
+        Self::insert_into_disk(self.snapshot.as_mut(), &self.versioned_energy_resources, key.as_bytes(), &bytes[..])?;
+        
+        // Update the latest topoheight pointer
+        Self::insert_into_disk(self.snapshot.as_mut(), &self.energy_resources, &account.to_bytes(), &topoheight.to_be_bytes())?;
+        
         Ok(())
     }
 }

@@ -3,6 +3,9 @@ pub mod p2p;
 pub mod core;
 pub mod config;
 
+#[cfg(test)]
+mod integration_tests;
+
 use config::{DEV_PUBLIC_KEY, STABLE_LIMIT};
 use human_bytes::human_bytes;
 use humantime::{format_duration, Duration as HumanDuration};

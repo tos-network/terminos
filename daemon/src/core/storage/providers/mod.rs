@@ -20,6 +20,7 @@ mod db;
 mod contract;
 mod versioned;
 mod cache;
+mod energy;
 
 pub use asset::AssetProvider;
 pub use blocks_at_height::BlocksAtHeightProvider;
@@ -43,3 +44,4 @@ pub use db::DBProvider;
 pub use contract::*;
 pub use versioned::VersionedProvider;
 pub use cache::CacheProvider;
+pub use energy::EnergyProvider;

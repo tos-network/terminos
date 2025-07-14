@@ -60,7 +60,10 @@ use terminos_common::{
         Transaction,
         TransactionType
     },
-    utils::format_hashrate
+    utils::format_hashrate,
+    account::{
+        EnergyResource
+    },
 };
 use anyhow::Context as AnyContext;
 use human_bytes::human_bytes;
@@ -314,6 +317,7 @@ pub fn register_methods<S: Storage>(handler: &mut RPCHandler<Arc<Blockchain<S>>>
     handler.register_method("get_stable_balance", async_handler!(get_stable_balance::<S>));
     handler.register_method("has_balance", async_handler!(has_balance::<S>));
     handler.register_method("get_balance_at_topoheight", async_handler!(get_balance_at_topoheight::<S>));
+    handler.register_method("get_energy", async_handler!(get_energy::<S>));
 
     handler.register_method("get_nonce", async_handler!(get_nonce::<S>));
     handler.register_method("has_nonce", async_handler!(has_nonce::<S>));
@@ -1246,6 +1250,10 @@ async fn get_account_history<S: Storage>(context: &Context, body: Value) -> Resu
                             block_timestamp: block_header.get_timestamp()
                         });
                     }
+                },
+                TransactionType::Energy(_) => {
+                    // Energy operations don't create history entries
+                    // They are handled by the energy module
                 }
             }
         }
@@ -1701,5 +1709,49 @@ async fn get_p2p_block_propagation<S: Storage>(context: &Context, body: Value) -
         peers,
         first_seen,
         processing_at
+    }))
+}
+
+async fn get_energy<S: Storage>(context: &Context, body: Value) -> Result<Value, InternalRpcError> {
+    let params: GetEnergyParams = parse_params(body)?;
+    let blockchain: &Arc<Blockchain<S>> = context.get()?;
+    let storage = blockchain.get_storage().read().await;
+    
+    // Get energy resource for the address
+    let energy_resource_opt = storage.get_energy_resource(params.address.get_public_key()).await
+        .context("Error while retrieving energy resource")?;
+    let current_topoheight = blockchain.get_topo_height();
+    
+    let (frozen_tos, total_energy, used_energy, available_energy, last_update, freeze_records) = if let Some(energy_resource) = energy_resource_opt {
+        let freeze_records: Vec<FreezeRecordInfo> = energy_resource.freeze_records.iter().map(|record| {
+            FreezeRecordInfo {
+                amount: record.amount,
+                duration: record.duration.name().to_string(),
+                freeze_topoheight: record.freeze_topoheight,
+                unlock_topoheight: record.unlock_topoheight,
+                energy_gained: record.energy_gained,
+                can_unlock: record.can_unlock(current_topoheight),
+                remaining_blocks: record.remaining_blocks(current_topoheight),
+            }
+        }).collect();
+        (
+            energy_resource.frozen_tos,
+            energy_resource.total_energy,
+            energy_resource.used_energy,
+            energy_resource.available_energy(),
+            energy_resource.last_update,
+            freeze_records
+        )
+    } else {
+        (0, 0, 0, 0, 0, Vec::new())
+    };
+    
+    Ok(json!(GetEnergyResult {
+        frozen_tos,
+        total_energy,
+        used_energy,
+        available_energy,
+        last_update,
+        freeze_records,
     }))
 }

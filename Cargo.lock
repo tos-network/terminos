@@ -1490,15 +1490,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "genesis"
-version = "1.0.0"
-dependencies = [
- "hex",
- "indexmap 2.9.0",
- "terminos_common",
-]
-
-[[package]]
 name = "getrandom"
 version = "0.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3251,6 +3242,15 @@ dependencies = [
  "x25519-dalek",
  "xelis-environment",
  "xelis-vm",
+]
+
+[[package]]
+name = "terminos_genesis"
+version = "1.0.0"
+dependencies = [
+ "hex",
+ "indexmap 2.9.0",
+ "terminos_common",
 ]
 
 [[package]]

@@ -3,19 +3,26 @@ use crate::{contract::register_opaque_types, crypto::Hash};
 pub const VERSION: &str = env!("BUILD_VERSION");
 pub const TERMINOS_ASSET: Hash = Hash::zero();
 
-// Lowest fee per KB possible on the network
-// 0.00010000 TOS per KB
-pub const FEE_PER_KB: u64 = 10000;
-// 0.00100000 TOS per account creation
-// User can create an account with 0.001 TOS
-// Or can mine a block to be registered for free
-pub const FEE_PER_ACCOUNT_CREATION: u64 = 100000;
-// 0.00005000 TOS per KB
-// Each transfer has a overhead of 5000 atomic units
-pub const FEE_PER_TRANSFER: u64 = 5000;
+// ===== NEW TRON-STYLE ENERGY-BASED FEE MODEL =====
 
-// 0.000500 TOS per multisig signature
-// Each signature of a multisig has a overhead of 500 atomic units
+// Account activation fee (similar to TRON's 0.1 TRX)
+// 0.1 TOS per account activation
+pub const ACCOUNT_ACTIVATION_FEE: u64 = 10000000; // 0.1 TOS
+
+// Energy-based fee model constants
+// Only transfer operations consume energy
+pub const ENERGY_PER_TRANSFER: u64 = 1;           // Basic transfer
+pub const ENERGY_PER_KB: u64 = 10;                // Per KB of transaction data
+
+// Energy to TOS conversion rate (when energy is insufficient)
+// 1 energy = 0.0001 TOS (market rate)
+pub const ENERGY_TO_TOS_RATE: u64 = 10000; // 0.0001 TOS per energy
+
+// Legacy fee constants (kept for reference only)
+// These are no longer used in the new energy-based model
+pub const FEE_PER_KB: u64 = 10000;
+pub const FEE_PER_ACCOUNT_CREATION: u64 = 100000;
+pub const FEE_PER_TRANSFER: u64 = 5000;
 pub const FEE_PER_MULTISIG_SIGNATURE: u64 = 500;
 
 // Contracts rules

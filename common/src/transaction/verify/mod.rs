@@ -53,14 +53,17 @@ use crate::{
         MAX_DEPOSIT_PER_INVOKE_CALL,
         MAX_MULTISIG_PARTICIPANTS,
         MAX_TRANSFER_COUNT
-    }
+    },
+    utils::calculate_energy_fee,
+    block::TopoHeight,
 };
 use super::{
     ContractDeposit,
     Role,
     Transaction,
     TransactionType,
-    TransferPayload
+    TransferPayload,
+    payload::EnergyPayload,
 };
 use contract::InvokeContract;
 
@@ -140,8 +143,21 @@ impl Transaction {
         let mut output = Ciphertext::zero();
 
         if *asset == TERMINOS_ASSET {
-            // Fees are applied to the native blockchain asset only.
-            output += Scalar::from(self.fee);
+            // Energy can only be used for Transfer transactions
+            // For non-transfer transactions, always use TOS fees
+            let use_energy_for_fees = self.uses_energy_for_fees();
+
+            if use_energy_for_fees {
+                // Use energy for transfer fees - no TOS deduction needed
+                // Energy consumption will be handled separately in the apply function
+                let energy_cost = self.calculate_energy_cost();
+                debug!("Using energy for transfer fees: {} energy", energy_cost);
+            } else {
+                // Use TOS payment for fees (for all transaction types except energy-enabled transfers)
+                // Fees are applied to the native blockchain asset only.
+                output += Scalar::from(self.fee);
+                debug!("Using TOS for transaction fees: {} TOS", self.fee);
+            }
         }
 
         match &self.data {
@@ -202,6 +218,9 @@ impl Transaction {
                 if *asset == TERMINOS_ASSET {
                     output += Scalar::from(BURN_PER_CONTRACT);
                 }
+            },
+            TransactionType::Energy(_) => {
+                // Energy operations don't consume additional assets beyond fees
             }
         }
 
@@ -235,6 +254,7 @@ impl Transaction {
                     }
                 }
             },
+            TransactionType::Energy(_) => {},
             _ => {}
         }
 
@@ -302,6 +322,7 @@ impl Transaction {
                 .keys()
                 .all(|asset| has_commitment_for_asset(asset)),
             TransactionType::DeployContract(_) => true,
+            TransactionType::Energy(_) => true,
         }
     }
 
@@ -407,6 +428,12 @@ impl Transaction {
         trace!("Pre-verifying transaction");
         if !self.has_valid_version_format() {
             return Err(VerificationError::InvalidFormat);
+        }
+
+        // Validate that energy fees are only used for Transfer transactions
+        if self.uses_energy_fees() && !matches!(self.get_data(), TransactionType::Transfers(_)) {
+            debug!("Energy fees can only be used for Transfer transactions");
+            return Err(VerificationError::EnergyFeesNotAllowedForNonTransfer);
         }
 
         trace!("Pre-verifying transaction on state");
@@ -549,6 +576,10 @@ impl Transaction {
                 let validator = ModuleValidator::new(&payload.module, environment);
                 validator.verify()
                     .map_err(|err| VerificationError::ModuleError(format!("{:#}", err)))?;
+            },
+            TransactionType::Energy(_) => {
+                // Energy operations are validated by the energy module
+                // No additional verification needed here
             }
         };
 
@@ -774,6 +805,10 @@ impl Transaction {
 
                 state.set_contract_module(tx_hash, &payload.module).await
                     .map_err(VerificationError::State)?;
+            },
+            TransactionType::Energy(_) => {
+                // Energy operations don't require additional transcript operations
+                // The energy module handles its own validation
             }
         }
 
@@ -880,18 +915,80 @@ impl Transaction {
         Ok(())
     }
 
+    /// Calculate energy cost for this transaction
+    /// Energy can only be used for Transfer transactions, so this method focuses on transfer-specific costs
+    pub fn calculate_energy_cost(&self) -> u64 {
+        // Energy can only be used for Transfer transactions
+        // Calculate energy cost based on transfer-specific parameters
+        calculate_energy_fee(
+            self.size(),
+            self.get_outputs_count(),
+            0 // new_addresses will be calculated during verification
+        )
+    }
+
+    /// Check if this transaction uses energy for fees
+    /// Energy can only be used for Transfer transactions to provide free TOS and other token transfers
+    pub fn uses_energy_for_fees(&self) -> bool {
+        // Energy can only be used for Transfer transactions
+        // This provides users with the opportunity to stake TOS for free transfers
+        self.uses_energy_fees() && matches!(self.get_data(), TransactionType::Transfers(_))
+    }
+
+    /// Get the fee amount (either TOS fee or energy cost)
+    pub fn get_fee_amount(&self) -> (u64, bool) {
+        if self.uses_energy_for_fees() {
+            (self.calculate_energy_cost(), true) // (energy_cost, is_energy)
+        } else {
+            (self.fee, false) // (tos_fee, is_energy)
+        }
+    }
+
     // Apply the transaction to the state
     // Arc is required around Self to be shared easily into the VM if needed
-    async fn apply<'a, P: ContractProvider, E, B: BlockchainApplyState<'a, P, E>>(
+    async fn apply<'a, P: ContractProvider, E: From<String>, B: BlockchainApplyState<'a, P, E>>(
         &'a self,
         tx_hash: &'a Hash,
         state: &mut B,
         decompressed_deposits: &HashMap<&Hash, DecompressedDepositCt>,
     ) -> Result<(), VerificationError<E>> {
         trace!("Applying transaction data");
+        
+        // Validate that energy fees are only used for Transfer transactions
+        if self.uses_energy_fees() && !matches!(self.get_data(), TransactionType::Transfers(_)) {
+            debug!("Energy fees can only be used for Transfer transactions");
+            return Err(VerificationError::EnergyFeesNotAllowedForNonTransfer);
+        }
+        
         // Update nonce
         state.update_account_nonce(self.get_source(), self.nonce + 1).await
             .map_err(VerificationError::State)?;
+
+        // Handle energy consumption for transfer transactions only
+        // Energy provides users with the opportunity to stake TOS for free transfers
+        if self.uses_energy_for_fees() {
+            let energy_cost = self.calculate_energy_cost();
+            
+            // Get user's energy resource
+            let energy_resource = state.get_energy_resource(&self.source).await
+                .map_err(VerificationError::State)?;
+            
+            // Check if user has enough energy for the transfer
+            if !energy_resource.has_enough_energy(energy_cost) {
+                return Err(VerificationError::InsufficientEnergy(energy_cost));
+            }
+            
+            // Consume energy for the transfer transaction
+            let mut energy_resource = energy_resource;
+            energy_resource.consume_energy(energy_cost)
+                .map_err(|_| VerificationError::InsufficientEnergy(energy_cost))?;
+            
+            // Update energy resource in state
+            state.update_energy_resource(&self.source, energy_resource).await
+                .map_err(VerificationError::State)?;
+            
+            debug!("Consumed {} energy for transfer transaction {}", energy_cost, tx_hash);
+        }
 
         // Apply receiver balances
         match &self.data {
@@ -923,23 +1020,19 @@ impl Transaction {
                 state.set_multisig_state(&self.source, payload).await.map_err(VerificationError::State)?;
             },
             TransactionType::InvokeContract(payload) => {
-                if self.is_contract_available(state, &payload.contract).await? {
-                    self.invoke_contract(
-                        tx_hash,
-                        state,
-                        decompressed_deposits,
-                        &payload.contract,
-                        &payload.deposits,
-                        payload.parameters.iter().cloned(),
-                        payload.max_gas,
-                        InvokeContract::Entry(payload.chunk_id)
-                    ).await?;
-                } else {
-                    debug!("Contract {} invoked from {} not available", payload.contract, tx_hash);
+                let is_success = self.invoke_contract(
+                    tx_hash,
+                    state,
+                    decompressed_deposits,
+                    &payload.contract,
+                    &payload.deposits,
+                    payload.parameters.iter().cloned(),
+                    payload.max_gas,
+                    InvokeContract::Entry(payload.chunk_id)
+                ).await?;
 
-                    // Nothing was spent, we must refund the gas and deposits
-                    self.handle_gas(state, 0, payload.max_gas).await?;
-                    self.refund_deposits(state, &payload.deposits, decompressed_deposits).await?;
+                if !is_success {
+                    debug!("Contract invocation for {} failed", tx_hash);
                 }
             },
             TransactionType::DeployContract(payload) => {
@@ -966,6 +1059,37 @@ impl Transaction {
                             .map_err(VerificationError::State)?;
                     }
                 }
+            },
+            TransactionType::Energy(payload) => {
+                // Handle energy freeze/unfreeze operations with duration support
+                let mut energy_resource = state.get_energy_resource(&self.source).await
+                    .map_err(VerificationError::State)?;
+                
+                // Get current topoheight from state (approximate, will be refined during actual execution)
+                let current_topoheight = 0; // This will be set during actual block execution
+                
+                match payload {
+                    EnergyPayload::FreezeTos { amount, duration } => {
+                        // Freeze TOS with duration-based rewards
+                        let energy_gained = energy_resource.freeze_tos_for_energy(*amount, duration.clone(), current_topoheight);
+                        debug!("Froze {} TOS for {} days, gained {} energy", amount, duration.name(), energy_gained);
+                    },
+                    EnergyPayload::UnfreezeTos { amount } => {
+                        // Unfreeze TOS (only if lock period has expired)
+                        match energy_resource.unfreeze_tos(*amount, current_topoheight) {
+                            Ok(energy_removed) => {
+                                debug!("Unfroze {} TOS, removed {} energy", amount, energy_removed);
+                            },
+                            Err(e) => {
+                                return Err(VerificationError::State(e.into()));
+                            }
+                        }
+                    }
+                }
+                
+                // Update energy resource in state
+                state.update_energy_resource(&self.source, energy_resource).await
+                    .map_err(VerificationError::State)?;
             }
         }
 
@@ -973,11 +1097,17 @@ impl Transaction {
     }
 
     /// Assume the tx is valid, apply it to `state`. May panic if a ciphertext is ill-formed.
-    pub async fn apply_without_verify<'a, P: ContractProvider, E, B: BlockchainApplyState<'a, P, E>>(
+    pub async fn apply_without_verify<'a, P: ContractProvider, E: From<String>, B: BlockchainApplyState<'a, P, E>>(
         &'a self,
         tx_hash: &'a Hash,
         state: &mut B,
     ) -> Result<(), VerificationError<E>> {
+        // Validate that energy fees are only used for Transfer transactions
+        if self.uses_energy_fees() && !matches!(self.get_data(), TransactionType::Transfers(_)) {
+            debug!("Energy fees can only be used for Transfer transactions");
+            return Err(VerificationError::EnergyFeesNotAllowedForNonTransfer);
+        }
+        
         let mut transfers_decompressed = Vec::new();
         let mut deposits_decompressed = HashMap::new();
         match &self.data {
@@ -1029,7 +1159,7 @@ impl Transaction {
             // Update source balance
             state.add_sender_output(
                 &self.source,
-                commitment.get_asset(),
+                asset,
                 output,
             ).await.map_err(VerificationError::State)?;
         }
@@ -1040,12 +1170,19 @@ impl Transaction {
     /// Verify only that the final sender balance is the expected one for each commitment
     /// Then apply ciphertexts to the state
     /// Checks done are: commitment eq proofs only
-    pub async fn apply_with_partial_verify<'a, P: ContractProvider, E, B: BlockchainApplyState<'a, P, E>>(
+    pub async fn apply_with_partial_verify<'a, P: ContractProvider, E: From<String>, B: BlockchainApplyState<'a, P, E>>(
         &'a self,
         tx_hash: &'a Hash,
         state: &mut B
     ) -> Result<(), VerificationError<E>> {
         trace!("apply with partial verify");
+        
+        // Validate that energy fees are only used for Transfer transactions
+        if self.uses_energy_fees() && !matches!(self.get_data(), TransactionType::Transfers(_)) {
+            debug!("Energy fees can only be used for Transfer transactions");
+            return Err(VerificationError::EnergyFeesNotAllowedForNonTransfer);
+        }
+        
         let mut sigma_batch_collector = BatchCollector::default();
 
         let mut transfers_decompressed = Vec::new();

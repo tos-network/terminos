@@ -63,7 +63,7 @@ use terminos_common::{
         Transaction,
         TransactionType
     },
-    utils::{calculate_tx_fee, format_tos},
+    utils::{calculate_energy_fee, calculate_tx_fee, format_tos},
     tokio::{spawn_task, is_multi_threads_supported},
     varuint::VarUint,
     contract::build_environment,
@@ -2986,8 +2986,9 @@ impl<S: Storage> Blockchain<S> {
     }
 }
 
-// Estimate the required fees for a transaction
-// For V1, new keys are only counted one time for creation fee instead of N transfers to it
+// Estimate the required fees for a transaction using energy-based model
+// For transfer transactions, energy can be used for free transfers
+// For non-transfer transactions, TOS fees are required
 pub async fn estimate_required_tx_fees<P: AccountProvider>(provider: &P, current_topoheight: TopoHeight, tx: &Transaction, _: BlockVersion) -> Result<u64, BlockchainError> {
     let mut output_count = 0;
     let mut processed_keys = HashSet::new();
@@ -3001,7 +3002,27 @@ pub async fn estimate_required_tx_fees<P: AccountProvider>(provider: &P, current
         }
     }
 
-    Ok(calculate_tx_fee(tx.size(), output_count, processed_keys.len(), tx.get_multisig_count()))
+    // For transfer transactions, use energy-based fee calculation
+    // For non-transfer transactions, use TOS-based fee calculation
+    let fee = if matches!(tx.get_data(), TransactionType::Transfers(_)) {
+        // Energy-based fee calculation for transfers
+        calculate_energy_fee(
+            tx.size(), 
+            output_count, 
+            processed_keys.len()
+        )
+    } else {
+        // TOS-based fee calculation for non-transfer transactions
+        // Use traditional fee calculation for non-transfer operations
+        calculate_tx_fee(
+            tx.size(), 
+            output_count, 
+            processed_keys.len(),
+            tx.get_multisig_count()
+        )
+    };
+
+    Ok(fee)
 }
 
 // Get the block reward for a side block based on how many side blocks exists at same height

@@ -422,3 +422,9 @@ impl From<VerificationError<BlockchainError>> for BlockchainError {
         }
     }
 }
+
+impl From<String> for BlockchainError {
+    fn from(e: String) -> Self {
+        BlockchainError::ModuleError(e)
+    }
+}

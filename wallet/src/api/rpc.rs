@@ -6,7 +6,7 @@ use terminos_common::{
         DataElement,
         DataHash,
         SplitAddressParams,
-        SplitAddressResult
+        SplitAddressResult,
     },
     async_handler,
     config::{VERSION, TERMINOS_ASSET},
@@ -20,10 +20,11 @@ use terminos_common::{
     },
     serializer::Serializer,
     transaction::{
-        builder::{FeeBuilder, TransactionBuilder},
+        builder::{EnergyBuilder, FeeBuilder, TransactionBuilder, TransactionTypeBuilder},
         extra_data::ExtraData,
         multisig::{MultiSig, SignatureId}
     },
+    // utils import removed
 };
 use serde_json::{Value, json};
 use crate::{
@@ -47,6 +48,9 @@ pub fn register_methods(handler: &mut RPCHandler<Arc<Wallet>>) {
     handler.register_method("rescan", async_handler!(rescan));
     handler.register_method("get_balance", async_handler!(get_balance));
     handler.register_method("has_balance", async_handler!(has_balance));
+    handler.register_method("get_energy", async_handler!(get_energy));
+    handler.register_method("freeze_tos", async_handler!(freeze_tos));
+    handler.register_method("unfreeze_tos", async_handler!(unfreeze_tos));
     handler.register_method("get_tracked_assets", async_handler!(get_tracked_assets));
     handler.register_method("get_asset_precision", async_handler!(get_asset_precision));
     handler.register_method("get_assets", async_handler!(get_assets));
@@ -249,6 +253,35 @@ async fn has_balance(context: &Context, body: Value) -> Result<Value, InternalRp
     Ok(json!(exist))
 }
 
+// Retrieve energy information for the wallet
+async fn get_energy(context: &Context, body: Value) -> Result<Value, InternalRpcError> {
+    if body != Value::Null {
+        return Err(InternalRpcError::UnexpectedParams)
+    }
+
+    let wallet: &Arc<Wallet> = context.get()?;
+    
+    // Check if wallet is online to query daemon
+    if !wallet.is_online().await {
+        return Err(InternalRpcError::InvalidRequestStr("Wallet is not connected to a daemon"))
+    }
+
+    let network_handler = wallet.get_network_handler().lock().await;
+    if let Some(handler) = network_handler.as_ref() {
+        let api = handler.get_api();
+        let address = wallet.get_address();
+        
+        // Call daemon's get_energy method
+        let result = api.call(&"get_energy".to_string(), &terminos_common::api::daemon::GetEnergyParams {
+            address: Cow::Borrowed(&address)
+        }).await.context("Failed to call daemon get_energy method")?;
+        
+        Ok(result)
+    } else {
+        Err(InternalRpcError::InvalidRequestStr("Wallet is not connected to a daemon"))
+    }
+}
+
 // Retrieve all tracked assets by wallet
 async fn get_tracked_assets(context: &Context, body: Value) -> Result<Value, InternalRpcError> {
     if body != Value::Null {
@@ -368,7 +401,7 @@ async fn build_transaction(context: &Context, body: Value) -> Result<Value, Inte
     // if requested, broadcast the TX ourself
     if params.broadcast {
         if let Err(e) = wallet.submit_transaction(&tx).await {
-            warn!("Clearing Tx cache & unconfirmed balances because of broadcasting error: {}", e);
+            warn!("Clearing Tx cache & unconfirmed balances because of broadcasting error");
             debug!("TX HEX: {}", tx.to_hex());
             storage.clear_tx_cache();
             storage.delete_unconfirmed_balances().await;
@@ -523,12 +556,12 @@ async fn finalize_unsigned_transaction(context: &Context, body: Value) -> Result
     let mut state = TransactionBuilderState::from_tx(&storage, &tx, wallet.get_network().is_mainnet()).await?;
 
     if params.broadcast {
-        if let Err(e) = wallet.submit_transaction(&tx).await {
-            warn!("Clearing Tx cache & unconfirmed balances because of broadcasting error: {}", e);
+        if let Err(_) = wallet.submit_transaction(&tx).await {
+            warn!("Clearing Tx cache & unconfirmed balances because of broadcasting error");
             debug!("TX HEX: {}", tx.to_hex());
             storage.clear_tx_cache();
             storage.delete_unconfirmed_balances().await;
-            return Err(e.into());
+            return Err(InternalRpcError::InvalidRequestStr("Failed to submit transaction"));
         }
     }
 
@@ -776,4 +809,92 @@ async fn query_db(context: &Context, body: Value) -> Result<Value, InternalRpcEr
     let storage = wallet.get_storage().read().await;
     let result = storage.query_db(&tree, params.key, params.value, params.limit, params.skip)?;
     Ok(json!(result))
+}
+
+// Freeze TOS to get energy
+async fn freeze_tos(context: &Context, body: Value) -> Result<Value, InternalRpcError> {
+    let params: FreezeTosParams = parse_params(body)?;
+    let wallet: &Arc<Wallet> = context.get()?;
+    
+    // Check if wallet is online to submit transaction
+    if !wallet.is_online().await {
+        return Err(InternalRpcError::InvalidRequestStr("Wallet is not connected to a daemon"))
+    }
+
+    // Check if amount is valid
+    if params.amount == 0 {
+        return Err(InternalRpcError::InvalidParams("Amount must be greater than 0"))
+    }
+
+    // Parse duration
+    let duration = match params.duration.as_str() {
+        "3" | "3d" | "3days" => terminos_common::account::energy::FreezeDuration::Day3,
+        "7" | "7d" | "7days" => terminos_common::account::energy::FreezeDuration::Day7,
+        "14" | "14d" | "14days" => terminos_common::account::energy::FreezeDuration::Day14,
+        _ => {
+            return Err(InternalRpcError::InvalidParams("Invalid duration. Please choose: 3, 7, or 14 days"))
+        }
+    };
+
+    // Create energy transaction builder with duration
+    let energy_builder = EnergyBuilder::freeze_tos(params.amount, duration.clone());
+    
+    let tx_type = TransactionTypeBuilder::Energy(energy_builder);
+    
+    // Create and submit transaction
+    match wallet.create_transaction(tx_type, FeeBuilder::default()).await {
+        Ok(tx) => {
+            if let Err(_) = wallet.submit_transaction(&tx).await {
+                return Err(InternalRpcError::InvalidRequestStr("Failed to submit transaction"))
+            }
+            Ok(json!({
+                "success": true,
+                "transaction_hash": tx.hash(),
+                "frozen_amount": params.amount,
+                "duration": params.duration,
+                "energy_gained": (params.amount as f64 * duration.reward_multiplier()) as u64
+            }))
+        },
+        Err(_) => {
+            Err(InternalRpcError::InvalidRequestStr("Failed to create transaction"))
+        }
+    }
+}
+
+// Unfreeze TOS from energy
+async fn unfreeze_tos(context: &Context, body: Value) -> Result<Value, InternalRpcError> {
+    let params: UnfreezeTosParams = parse_params(body)?;
+    let wallet: &Arc<Wallet> = context.get()?;
+    
+    // Check if wallet is online to submit transaction
+    if !wallet.is_online().await {
+        return Err(InternalRpcError::InvalidRequestStr("Wallet is not connected to a daemon"))
+    }
+
+    // Check if amount is valid
+    if params.amount == 0 {
+        return Err(InternalRpcError::InvalidParams("Amount must be greater than 0"))
+    }
+
+    // Create energy transaction builder
+    let energy_builder = EnergyBuilder::unfreeze_tos(params.amount);
+    
+    let tx_type = TransactionTypeBuilder::Energy(energy_builder);
+    
+    // Create and submit transaction
+    match wallet.create_transaction(tx_type, FeeBuilder::default()).await {
+        Ok(tx) => {
+            if let Err(_) = wallet.submit_transaction(&tx).await {
+                return Err(InternalRpcError::InvalidRequestStr("Failed to submit transaction"))
+            }
+            Ok(json!({
+                "success": true,
+                "transaction_hash": tx.hash(),
+                "unfrozen_amount": params.amount
+            }))
+        },
+        Err(_) => {
+            Err(InternalRpcError::InvalidRequestStr("Failed to create transaction"))
+        }
+    }
 }

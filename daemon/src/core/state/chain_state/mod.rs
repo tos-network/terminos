@@ -12,7 +12,8 @@ use terminos_common::{
         CiphertextCache,
         Nonce,
         VersionedBalance,
-        VersionedNonce
+        VersionedNonce,
+        EnergyResource
     },
     block::{BlockVersion, TopoHeight},
     config::TERMINOS_ASSET,
@@ -112,6 +113,9 @@ pub struct ChainState<'a, S: Storage> {
     // Sender accounts
     // This is used to verify ZK Proofs and store/update nonces
     accounts: HashMap<&'a PublicKey, Account<'a>>,
+    // Energy resources for accounts
+    // This is used to track energy consumption and freezing/unfreezing
+    energy_resources: HashMap<PublicKey, EnergyResource>,
     // Current stable topoheight of the snapshot
     stable_topoheight: TopoHeight,
     // Current topoheight of the snapshot
@@ -137,6 +141,7 @@ impl<'a, S: Storage> ChainState<'a, S> {
             environment,
             receiver_balances: HashMap::new(),
             accounts: HashMap::new(),
+            energy_resources: HashMap::new(),
             stable_topoheight,
             topoheight,
             contracts: HashMap::new(),

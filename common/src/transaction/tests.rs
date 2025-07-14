@@ -38,10 +38,12 @@ use super::{
         TransactionBuilder,
         TransactionTypeBuilder,
         TransferBuilder,
-        MultiSigBuilder
+        MultiSigBuilder,
+        GenerationError
     },
     verify::BlockchainVerificationState,
     BurnPayload,
+    FeeType,
     Reference,
     Role,
     Transaction
@@ -617,6 +619,480 @@ async fn test_multisig() {
     tx.verify(&hash, &mut state).await.unwrap();
 }
 
+// Fee type and transaction type validation tests
+#[test]
+fn test_fee_type_enum() {
+    use super::FeeType;
+    
+    // Test FeeType variants
+    let tos_fee = FeeType::TOS;
+    let energy_fee = FeeType::Energy;
+    
+    // Test is_energy method
+    assert!(!tos_fee.is_energy());
+    assert!(energy_fee.is_energy());
+    
+    // Test is_tos method
+    assert!(tos_fee.is_tos());
+    assert!(!energy_fee.is_tos());
+    
+    // Test equality
+    assert_eq!(tos_fee, FeeType::TOS);
+    assert_eq!(energy_fee, FeeType::Energy);
+    assert_ne!(tos_fee, energy_fee);
+}
+
+#[test]
+fn test_transaction_fee_type_methods() {
+    use super::{FeeType, TransactionType, BurnPayload};
+    
+    // Test FeeType enum methods
+    let tos_fee = FeeType::TOS;
+    let energy_fee = FeeType::Energy;
+    
+    // Test is_energy method
+    assert!(!tos_fee.is_energy());
+    assert!(energy_fee.is_energy());
+    
+    // Test is_tos method
+    assert!(tos_fee.is_tos());
+    assert!(!energy_fee.is_tos());
+    
+    // Test transaction type validation
+    let transfer_type = TransactionType::Transfers(vec![]);
+    let burn_type = TransactionType::Burn(BurnPayload {
+        asset: TERMINOS_ASSET,
+        amount: 100,
+    });
+    
+    // Energy fees should only be valid for transfers
+    assert!(matches!(transfer_type, TransactionType::Transfers(_)));
+    assert!(!matches!(burn_type, TransactionType::Transfers(_)));
+    
+    // Test fee type validation logic
+    assert!(energy_fee.is_energy());
+    assert!(tos_fee.is_tos());
+}
+
+#[test]
+fn test_energy_fees_only_for_transfers() {
+    use super::{FeeType, TransactionType, BurnPayload};
+    
+    // Test that energy fees are only valid for Transfer transactions
+    let transfer_type = TransactionType::Transfers(vec![]);
+    let burn_type = TransactionType::Burn(BurnPayload {
+        asset: TERMINOS_ASSET,
+        amount: 100,
+    });
+    
+    // Energy fees should only be valid for transfers
+    assert!(matches!(transfer_type, TransactionType::Transfers(_)));
+    assert!(!matches!(burn_type, TransactionType::Transfers(_)));
+    
+    // FeeType validation logic
+    let energy_fee = FeeType::Energy;
+    let tos_fee = FeeType::TOS;
+    
+    // Energy fees are only valid for transfers
+    assert!(energy_fee.is_energy());
+    assert!(tos_fee.is_tos());
+}
+
+#[test]
+fn test_transaction_builder_fee_type_validation() {
+    let mut alice = Account::new();
+    let bob = Account::new();
+    alice.set_balance(TERMINOS_ASSET, 100 * COIN_VALUE);
+    
+    // Test 1: Transfer transaction with Energy fees (should succeed)
+    {
+        let mut state = AccountStateImpl {
+            balances: alice.balances.clone(),
+            nonce: alice.nonce,
+            reference: Reference {
+                topoheight: 0,
+                hash: Hash::zero(),
+            },
+        };
+        
+        let data = TransactionTypeBuilder::Transfers(vec![TransferBuilder {
+            amount: 10,
+            destination: bob.address(),
+            asset: TERMINOS_ASSET,
+            extra_data: None,
+            encrypt_extra_data: true,
+        }]);
+        
+        // Use energy fees for transfer (explicit)
+        let builder = TransactionBuilder::new(
+            TxVersion::V1, 
+            alice.keypair.get_public_key().compress(), 
+            None, 
+            data, 
+            FeeBuilder::Value(0)
+        ).with_fee_type(FeeType::Energy);
+        
+        let tx = builder.build(&mut state, &alice.keypair).unwrap();
+        assert!(tx.uses_energy_fees());
+        assert!(matches!(tx.get_data(), TransactionType::Transfers(_)));
+    }
+    
+    // Test 2: Burn transaction with TOS fees (should succeed)
+    {
+        let mut state = AccountStateImpl {
+            balances: alice.balances.clone(),
+            nonce: alice.nonce,
+            reference: Reference {
+                topoheight: 0,
+                hash: Hash::zero(),
+            },
+        };
+        
+        let data = TransactionTypeBuilder::Burn(BurnPayload {
+            asset: TERMINOS_ASSET,
+            amount: 10,
+        });
+        
+        // Use TOS fees for burn (explicit)
+        let builder = TransactionBuilder::new(
+            TxVersion::V1, 
+            alice.keypair.get_public_key().compress(), 
+            None, 
+            data, 
+            FeeBuilder::Value(5000) // 0.00005 TOS fee
+        ).with_fee_type(FeeType::TOS);
+        
+        let tx = builder.build(&mut state, &alice.keypair).unwrap();
+        assert!(tx.uses_tos_fees());
+        assert!(matches!(tx.get_data(), TransactionType::Burn(_)));
+    }
+}
+
+#[test]
+fn test_fee_type_serialization() {
+    use super::FeeType;
+    use crate::serializer::{Reader, Writer};
+    
+    // Test serialization and deserialization
+    let fee_types = vec![FeeType::TOS, FeeType::Energy];
+    
+    for fee_type in fee_types {
+        let mut buffer = Vec::new();
+        let mut writer = Writer::new(&mut buffer);
+        fee_type.write(&mut writer);
+        
+        let mut reader = Reader::new(&buffer);
+        let deserialized = FeeType::read(&mut reader).unwrap();
+        
+        assert_eq!(fee_type, deserialized);
+        assert_eq!(fee_type.size(), 1); // FeeType should be 1 byte
+    }
+}
+
+#[test]
+fn test_transaction_size_with_fee_type() {
+    let mut alice = Account::new();
+    let bob = Account::new();
+    alice.set_balance(TERMINOS_ASSET, 100 * COIN_VALUE);
+    
+    // Test that transaction size includes fee_type field
+    let mut state = AccountStateImpl {
+        balances: alice.balances.clone(),
+        nonce: alice.nonce,
+        reference: Reference {
+            topoheight: 0,
+            hash: Hash::zero(),
+        },
+    };
+    
+    let data = TransactionTypeBuilder::Transfers(vec![TransferBuilder {
+        amount: 10,
+        destination: bob.address(),
+        asset: TERMINOS_ASSET,
+        extra_data: None,
+        encrypt_extra_data: true,
+    }]);
+    
+    // Test with TOS fees (explicit)
+    let builder_tos = TransactionBuilder::new(
+        TxVersion::V1, 
+        alice.keypair.get_public_key().compress(), 
+        None, 
+        data.clone(), 
+        FeeBuilder::Value(5000) // 0.00005 TOS fee
+    ).with_fee_type(FeeType::TOS);
+    let estimated_size_tos = builder_tos.estimate_size();
+    let tx_tos = builder_tos.build(&mut state, &alice.keypair).unwrap();
+    assert_eq!(estimated_size_tos, tx_tos.size());
+    
+    // Test with Energy fees (explicit)
+    let builder_energy = TransactionBuilder::new(
+        TxVersion::V1, 
+        alice.keypair.get_public_key().compress(), 
+        None, 
+        data, 
+        FeeBuilder::Value(0)
+    ).with_fee_type(FeeType::Energy);
+    let estimated_size_energy = builder_energy.estimate_size();
+    let tx_energy = builder_energy.build(&mut state, &alice.keypair).unwrap();
+    assert_eq!(estimated_size_energy, tx_energy.size());
+    
+    // Both should have the same size since fee_type is always present
+    assert_eq!(tx_tos.size(), tx_energy.size());
+}
+
+#[test]
+fn test_fee_type_default_behavior() {
+    let mut alice = Account::new();
+    let bob = Account::new();
+    alice.set_balance(TERMINOS_ASSET, 100 * COIN_VALUE);
+    
+    let mut state = AccountStateImpl {
+        balances: alice.balances.clone(),
+        nonce: alice.nonce,
+        reference: Reference {
+            topoheight: 0,
+            hash: Hash::zero(),
+        },
+    };
+    
+    let data = TransactionTypeBuilder::Transfers(vec![TransferBuilder {
+        amount: 10,
+        destination: bob.address(),
+        asset: TERMINOS_ASSET,
+        extra_data: None,
+        encrypt_extra_data: true,
+    }]);
+    
+    // Test default FeeBuilder (should use TOS fees)
+    let builder = TransactionBuilder::new(
+        TxVersion::V1, 
+        alice.keypair.get_public_key().compress(), 
+        None, 
+        data, 
+        FeeBuilder::default()
+    );
+    
+    let tx = builder.build(&mut state, &alice.keypair).unwrap();
+    assert!(tx.uses_tos_fees());
+    assert_eq!(tx.get_fee_type(), &FeeType::TOS);
+}
+
+#[test]
+fn test_transfer_default_fee_type_is_tos() {
+    let mut alice = Account::new();
+    let bob = Account::new();
+    alice.set_balance(TERMINOS_ASSET, 100 * COIN_VALUE);
+    
+    let mut state = AccountStateImpl {
+        balances: alice.balances.clone(),
+        nonce: alice.nonce,
+        reference: Reference {
+            topoheight: 0,
+            hash: Hash::zero(),
+        },
+    };
+    
+    let data = TransactionTypeBuilder::Transfers(vec![TransferBuilder {
+        amount: 10,
+        destination: bob.address(),
+        asset: TERMINOS_ASSET,
+        extra_data: None,
+        encrypt_extra_data: true,
+    }]);
+    
+    // Test default behavior (should use TOS fees regardless of fee amount)
+    let builder = TransactionBuilder::new(
+        TxVersion::V1, 
+        alice.keypair.get_public_key().compress(), 
+        None, 
+        data, 
+        FeeBuilder::Value(5) // Non-zero fee
+    );
+    
+    let tx = builder.build(&mut state, &alice.keypair).unwrap();
+    assert!(tx.uses_tos_fees());
+    assert_eq!(tx.get_fee_type(), &FeeType::TOS);
+    assert_eq!(tx.get_fee(), 5);
+    
+    // Test with zero fees (should still use TOS by default)
+    let mut state2 = AccountStateImpl {
+        balances: alice.balances.clone(),
+        nonce: alice.nonce,
+        reference: Reference {
+            topoheight: 0,
+            hash: Hash::zero(),
+        },
+    };
+    
+    let data2 = TransactionTypeBuilder::Transfers(vec![TransferBuilder {
+        amount: 10,
+        destination: bob.address(),
+        asset: TERMINOS_ASSET,
+        extra_data: None,
+        encrypt_extra_data: true,
+    }]);
+    
+    let builder2 = TransactionBuilder::new(
+        TxVersion::V1, 
+        alice.keypair.get_public_key().compress(), 
+        None, 
+        data2, 
+        FeeBuilder::Value(0) // Zero fee
+    );
+    
+    let tx2 = builder2.build(&mut state2, &alice.keypair).unwrap();
+    assert!(tx2.uses_tos_fees());
+    assert_eq!(tx2.get_fee_type(), &FeeType::TOS);
+    assert_eq!(tx2.get_fee(), 0);
+}
+
+#[test]
+fn test_explicit_fee_type_behavior() {
+    let mut alice = Account::new();
+    let bob = Account::new();
+    alice.set_balance(TERMINOS_ASSET, 100 * COIN_VALUE);
+    
+    // Test 1: Transfer with explicit Energy fees (should succeed)
+    {
+        let mut state = AccountStateImpl {
+            balances: alice.balances.clone(),
+            nonce: alice.nonce,
+            reference: Reference {
+                topoheight: 0,
+                hash: Hash::zero(),
+            },
+        };
+        
+        let data = TransactionTypeBuilder::Transfers(vec![TransferBuilder {
+            amount: 10,
+            destination: bob.address(),
+            asset: TERMINOS_ASSET,
+            extra_data: None,
+            encrypt_extra_data: true,
+        }]);
+        
+        let builder = TransactionBuilder::new(
+            TxVersion::V1, 
+            alice.keypair.get_public_key().compress(), 
+            None, 
+            data, 
+            FeeBuilder::Value(0)
+        ).with_fee_type(FeeType::Energy);
+        
+        let tx = builder.build(&mut state, &alice.keypair).unwrap();
+        assert!(tx.uses_energy_fees());
+        assert_eq!(tx.get_fee_type(), &FeeType::Energy);
+        assert_eq!(tx.get_fee(), 0);
+    }
+    
+    // Test 2: Transfer with explicit TOS fees (should succeed)
+    {
+        let mut state = AccountStateImpl {
+            balances: alice.balances.clone(),
+            nonce: alice.nonce,
+            reference: Reference {
+                topoheight: 0,
+                hash: Hash::zero(),
+            },
+        };
+        
+        let data = TransactionTypeBuilder::Transfers(vec![TransferBuilder {
+            amount: 10,
+            destination: bob.address(),
+            asset: TERMINOS_ASSET,
+            extra_data: None,
+            encrypt_extra_data: true,
+        }]);
+        
+        let builder = TransactionBuilder::new(
+            TxVersion::V1, 
+            alice.keypair.get_public_key().compress(), 
+            None, 
+            data, 
+            FeeBuilder::Value(5000) // 0.00005 TOS fee
+        ).with_fee_type(FeeType::TOS);
+        
+        let tx = builder.build(&mut state, &alice.keypair).unwrap();
+        assert!(tx.uses_tos_fees());
+        assert_eq!(tx.get_fee_type(), &FeeType::TOS);
+        assert_eq!(tx.get_fee(), 5000);
+    }
+    
+    // Test 3: Burn with explicit TOS fees (should succeed)
+    {
+        let mut state = AccountStateImpl {
+            balances: alice.balances.clone(),
+            nonce: alice.nonce,
+            reference: Reference {
+                topoheight: 0,
+                hash: Hash::zero(),
+            },
+        };
+        
+        let data = TransactionTypeBuilder::Burn(BurnPayload {
+            asset: TERMINOS_ASSET,
+            amount: 10,
+        });
+        
+        let builder = TransactionBuilder::new(
+            TxVersion::V1, 
+            alice.keypair.get_public_key().compress(), 
+            None, 
+            data, 
+            FeeBuilder::Value(5000) // 0.00005 TOS fee
+        ).with_fee_type(FeeType::TOS);
+        
+        let tx = builder.build(&mut state, &alice.keypair).unwrap();
+        assert!(tx.uses_tos_fees());
+        assert_eq!(tx.get_fee_type(), &FeeType::TOS);
+        assert!(matches!(tx.get_data(), TransactionType::Burn(_)));
+    }
+}
+
+#[test]
+fn test_energy_fees_validation_for_non_transfer() {
+    let mut alice = Account::new();
+    alice.set_balance(TERMINOS_ASSET, 100 * COIN_VALUE);
+    
+    // Test: Burn transaction with explicit Energy fees (should fail)
+    {
+        let mut state = AccountStateImpl {
+            balances: alice.balances.clone(),
+            nonce: alice.nonce,
+            reference: Reference {
+                topoheight: 0,
+                hash: Hash::zero(),
+            },
+        };
+        
+        let data = TransactionTypeBuilder::Burn(BurnPayload {
+            asset: TERMINOS_ASSET,
+            amount: 10,
+        });
+        
+        let builder = TransactionBuilder::new(
+            TxVersion::V1, 
+            alice.keypair.get_public_key().compress(), 
+            None, 
+            data, 
+            FeeBuilder::Value(0)
+        ).with_fee_type(FeeType::Energy);
+        
+        // This should fail because Energy fees are not allowed for non-transfer transactions
+        let result = builder.build(&mut state, &alice.keypair);
+        assert!(result.is_err());
+        
+        // Check the specific error type
+        match result {
+            Err(GenerationError::EnergyFeesNotAllowedForNonTransfer) => {
+                // Expected error
+            }
+            _ => panic!("Expected EnergyFeesNotAllowedForNonTransfer error"),
+        }
+    }
+}
+
 #[async_trait]
 impl<'a> BlockchainVerificationState<'a, ()> for ChainState {
 
@@ -764,4 +1240,119 @@ impl AccountState for AccountStateImpl {
         self.nonce = new_nonce;
         Ok(())
     }
+}
+
+#[tokio::test]
+async fn test_tos_transfer_with_tos_fees_balance_verification() {
+    let mut alice = Account::new();
+    let mut bob = Account::new();
+    
+    // Create a dummy Energy asset hash
+    let energy_asset = Hash::from_bytes(&[1u8; 32]).unwrap();
+    
+    // Set initial balances
+    // Alice: 10 TOS, 1000 Energy
+    alice.set_balance(TERMINOS_ASSET, 10 * COIN_VALUE);
+    alice.set_balance(energy_asset.clone(), 1000); // Energy asset (using a dummy hash)
+    
+    // Bob: 1 TOS, 2000 Energy
+    bob.set_balance(TERMINOS_ASSET, 1 * COIN_VALUE);
+    bob.set_balance(energy_asset.clone(), 2000); // Energy asset
+    
+    // Verify initial balances
+    assert_eq!(alice.balances[&TERMINOS_ASSET].balance, 10 * COIN_VALUE);
+    assert_eq!(alice.balances[&energy_asset].balance, 1000);
+    assert_eq!(bob.balances[&TERMINOS_ASSET].balance, 1 * COIN_VALUE);
+    assert_eq!(bob.balances[&energy_asset].balance, 2000);
+    
+    // Create transfer transaction: Alice sends 1 TOS to Bob with TOS fees
+    let mut state = AccountStateImpl {
+        balances: alice.balances.clone(),
+        nonce: alice.nonce,
+        reference: Reference {
+            topoheight: 0,
+            hash: Hash::zero(),
+        },
+    };
+    
+    let data = TransactionTypeBuilder::Transfers(vec![TransferBuilder {
+        amount: 1 * COIN_VALUE, // 1 TOS
+        destination: bob.address(),
+        asset: TERMINOS_ASSET,
+        extra_data: None,
+        encrypt_extra_data: true,
+    }]);
+    
+    let builder = TransactionBuilder::new(
+        TxVersion::V1, 
+        alice.keypair.get_public_key().compress(), 
+        None, 
+        data, 
+        FeeBuilder::Value(5000) // 0.00005 TOS fee (5,000 atomic units)
+    ).with_fee_type(FeeType::TOS);
+    
+    let tx = builder.build(&mut state, &alice.keypair).unwrap();
+    
+    // Verify transaction properties
+    assert!(tx.uses_tos_fees());
+    assert_eq!(tx.get_fee_type(), &FeeType::TOS);
+    assert_eq!(tx.get_fee(), 5000); // 0.00005 TOS fee (5,000 atomic units)
+    
+    // Create chain state for verification
+    let mut chain_state = ChainState::new();
+    
+    // Add Alice's balances to chain state
+    {
+        let mut balances = HashMap::new();
+        for (asset, balance) in &alice.balances {
+            balances.insert(asset.clone(), balance.ciphertext.clone().take_ciphertext().unwrap());
+        }
+        chain_state.accounts.insert(alice.keypair.get_public_key().compress(), AccountChainState {
+            balances,
+            nonce: alice.nonce,
+        });
+    }
+    
+    // Add Bob's balances to chain state
+    {
+        let mut balances = HashMap::new();
+        for (asset, balance) in &bob.balances {
+            balances.insert(asset.clone(), balance.ciphertext.clone().take_ciphertext().unwrap());
+        }
+        chain_state.accounts.insert(bob.keypair.get_public_key().compress(), AccountChainState {
+            balances,
+            nonce: bob.nonce,
+        });
+    }
+    
+    // Verify the transaction
+    let hash = tx.hash();
+    tx.verify(&hash, &mut chain_state).await.unwrap();
+    
+    // Check final balances after transfer
+    // Alice should have: 10 - 1 (transfer) - 0.00005 (fee) = 8.99995 TOS
+    let alice_tos_balance = alice.keypair.decrypt_to_point(&chain_state.accounts[&alice.keypair.get_public_key().compress()].balances[&TERMINOS_ASSET]);
+    let expected_alice_tos = Scalar::from((10u64 * COIN_VALUE) - (1u64 * COIN_VALUE) - 5000u64) * PC_GENS.B;
+    assert_eq!(alice_tos_balance, expected_alice_tos);
+    
+    // Alice's Energy should remain unchanged: 1000
+    let alice_energy_balance = alice.keypair.decrypt_to_point(&chain_state.accounts[&alice.keypair.get_public_key().compress()].balances[&energy_asset]);
+    let expected_alice_energy = Scalar::from(1000u64) * PC_GENS.B;
+    assert_eq!(alice_energy_balance, expected_alice_energy);
+    
+    // Bob should have: 1 + 1 = 2 TOS
+    let bob_tos_balance = bob.keypair.decrypt_to_point(&chain_state.accounts[&bob.keypair.get_public_key().compress()].balances[&TERMINOS_ASSET]);
+    let expected_bob_tos = Scalar::from(2u64 * COIN_VALUE) * PC_GENS.B;
+    assert_eq!(bob_tos_balance, expected_bob_tos);
+    
+    // Bob's Energy should remain unchanged: 2000
+    let bob_energy_balance = bob.keypair.decrypt_to_point(&chain_state.accounts[&bob.keypair.get_public_key().compress()].balances[&energy_asset]);
+    let expected_bob_energy = Scalar::from(2000u64) * PC_GENS.B;
+    assert_eq!(bob_energy_balance, expected_bob_energy);
+    
+    println!("Transfer verification successful!");
+    println!("Alice final TOS balance: 8.99995 TOS (10 - 1 transfer - 0.00005 fee)");
+    println!("Alice final Energy balance: 1000 (unchanged)");
+    println!("Bob final TOS balance: 2 TOS (1 + 1 transfer)");
+    println!("Bob final Energy balance: 2000 (unchanged)");
 }

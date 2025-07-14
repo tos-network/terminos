@@ -1,5 +1,6 @@
 mod balance;
 mod nonce;
+pub mod energy;
 
 use std::{
     borrow::Cow,
@@ -7,6 +8,7 @@ use std::{
 };
 pub use balance::{VersionedBalance, BalanceType, AccountSummary, Balance};
 pub use nonce::{VersionedNonce, Nonce};
+pub use energy::{EnergyResource, EnergyLease};
 use serde::{Serialize, Deserialize};
 use crate::{
         crypto::elgamal::{
@@ -30,6 +32,59 @@ pub enum CiphertextCache {
     Decompressed(Ciphertext),
     // Bool represents the flag "dirty" to know if the decompressed ciphertext has been modified
     Both(CompressedCiphertext, Ciphertext, bool)
+}
+
+// Versioned energy resource for accounts
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VersionedEnergyResource {
+    pub energy: EnergyResource,
+    pub topoheight: u64,
+}
+
+impl VersionedEnergyResource {
+    pub fn new(energy: EnergyResource, topoheight: u64) -> Self {
+        Self {
+            energy,
+            topoheight,
+        }
+    }
+
+    pub fn get_energy(&self) -> &EnergyResource {
+        &self.energy
+    }
+
+    pub fn get_mut_energy(&mut self) -> &mut EnergyResource {
+        &mut self.energy
+    }
+
+    pub fn get_topoheight(&self) -> u64 {
+        self.topoheight
+    }
+
+    pub fn should_be_stored(&self) -> bool {
+        // Always store energy resource changes
+        true
+    }
+}
+
+impl Serializer for VersionedEnergyResource {
+    fn write(&self, writer: &mut Writer) {
+        self.energy.write(writer);
+        writer.write_u64(&self.topoheight);
+    }
+
+    fn read(reader: &mut Reader) -> Result<Self, ReaderError> {
+        let energy = EnergyResource::read(reader)?;
+        let topoheight = reader.read_u64()?;
+        Ok(Self {
+            energy,
+            topoheight,
+        })
+    }
+
+    fn size(&self) -> usize {
+        self.energy.size() + self.topoheight.size()
+    }
 }
 
 impl CiphertextCache {

@@ -61,6 +61,51 @@ pub enum TransactionType {
     MultiSig(MultiSigPayload),
     InvokeContract(InvokeContractPayload),
     DeployContract(DeployContractPayload),
+    Energy(EnergyPayload),
+}
+
+/// Fee type for transactions
+/// Determines whether the transaction uses Energy or TOS for fees
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum FeeType {
+    /// Transaction uses TOS for fees (traditional fee model)
+    TOS,
+    /// Transaction uses Energy for fees (only available for Transfer transactions)
+    Energy,
+}
+
+impl FeeType {
+    /// Check if this fee type is Energy-based
+    pub fn is_energy(&self) -> bool {
+        matches!(self, FeeType::Energy)
+    }
+
+    /// Check if this fee type is TOS-based
+    pub fn is_tos(&self) -> bool {
+        matches!(self, FeeType::TOS)
+    }
+}
+
+impl Serializer for FeeType {
+    fn write(&self, writer: &mut Writer) {
+        match self {
+            FeeType::TOS => writer.write_u8(0),
+            FeeType::Energy => writer.write_u8(1),
+        }
+    }
+
+    fn read(reader: &mut Reader) -> Result<Self, ReaderError> {
+        let variant = reader.read_u8()?;
+        match variant {
+            0 => Ok(FeeType::TOS),
+            1 => Ok(FeeType::Energy),
+            _ => Err(ReaderError::InvalidValue),
+        }
+    }
+
+    fn size(&self) -> usize {
+        1
+    }
 }
 
 // Transaction to be sent over the network
@@ -72,8 +117,11 @@ pub struct Transaction {
     source: CompressedPublicKey,
     /// Type of the transaction
     data: TransactionType,
-    /// Fees in TOS
+    /// Fees in TOS (when fee_type is TOS) or Energy cost (when fee_type is Energy)
     fee: u64,
+    /// Fee type: TOS or Energy
+    /// Energy can only be used for Transfer transactions
+    fee_type: FeeType,
     /// nonce must be equal to the one on chain account
     /// used to prevent replay attacks and have ordered transactions
     nonce: Nonce,
@@ -105,11 +153,41 @@ impl Transaction {
         multisig: Option<MultiSig>,
         signature: Signature
     ) -> Self {
+        Self::new_with_fee_type(
+            version,
+            source,
+            data,
+            fee,
+            FeeType::TOS,
+            nonce,
+            source_commitments,
+            range_proof,
+            reference,
+            multisig,
+            signature,
+        )
+    }
+
+    /// Create a new transaction with explicit fee type
+    pub fn new_with_fee_type(
+        version: TxVersion,
+        source: CompressedPublicKey,
+        data: TransactionType,
+        fee: u64,
+        fee_type: FeeType,
+        nonce: Nonce,
+        source_commitments: Vec<SourceCommitment>,
+        range_proof: RangeProof,
+        reference: Reference,
+        multisig: Option<MultiSig>,
+        signature: Signature
+    ) -> Self {
         Self {
             version,
             source,
             data,
             fee,
+            fee_type,
             nonce,
             source_commitments,
             range_proof,
@@ -137,6 +215,21 @@ impl Transaction {
     // Get fees paid to miners
     pub fn get_fee(&self) -> u64 {
         self.fee
+    }
+
+    // Get the fee type (TOS or Energy)
+    pub fn get_fee_type(&self) -> &FeeType {
+        &self.fee_type
+    }
+
+    // Check if this transaction uses energy for fees
+    pub fn uses_energy_fees(&self) -> bool {
+        self.fee_type.is_energy()
+    }
+
+    // Check if this transaction uses TOS for fees
+    pub fn uses_tos_fees(&self) -> bool {
+        self.fee_type.is_tos()
     }
 
     // Get the nonce used
@@ -234,6 +327,10 @@ impl Serializer for TransactionType {
             TransactionType::DeployContract(module) => {
                 writer.write_u8(4);
                 module.write(writer);
+            },
+            TransactionType::Energy(payload) => {
+                writer.write_u8(5);
+                payload.write(writer);
             }
         };
     }
@@ -259,6 +356,7 @@ impl Serializer for TransactionType {
             2 => TransactionType::MultiSig(MultiSigPayload::read(reader)?),
             3 => TransactionType::InvokeContract(InvokeContractPayload::read(reader)?),
             4 => TransactionType::DeployContract(DeployContractPayload::read(reader)?),
+            5 => TransactionType::Energy(EnergyPayload::read(reader)?),
             _ => {
                 return Err(ReaderError::InvalidValue)
             }
@@ -282,6 +380,7 @@ impl Serializer for TransactionType {
             },
             TransactionType::InvokeContract(payload) => payload.size(),
             TransactionType::DeployContract(module) => module.size(),
+            TransactionType::Energy(payload) => payload.size(),
         }
     }
 }
@@ -292,6 +391,7 @@ impl Serializer for Transaction {
         self.source.write(writer);
         self.data.write(writer);
         self.fee.write(writer);
+        self.fee_type.write(writer);
         self.nonce.write(writer);
 
         writer.write_u8(self.source_commitments.len() as u8);
@@ -318,6 +418,7 @@ impl Serializer for Transaction {
         let source = CompressedPublicKey::read(reader)?;
         let data = TransactionType::read(reader)?;
         let fee = reader.read_u64()?;
+        let fee_type = FeeType::read(reader)?;
         let nonce = Nonce::read(reader)?;
 
         let commitments_len = reader.read_u8()?;
@@ -340,11 +441,12 @@ impl Serializer for Transaction {
 
         let signature = Signature::read(reader)?;
 
-        Ok(Transaction::new(
+        Ok(Transaction::new_with_fee_type(
             version,
             source,
             data,
             fee,
+            fee_type,
             nonce,
             source_commitments,
             range_proof,
@@ -360,6 +462,7 @@ impl Serializer for Transaction {
         + self.source.size()
         + self.data.size()
         + self.fee.size()
+        + self.fee_type.size()
         + self.nonce.size()
         // Commitments length byte
         + 1

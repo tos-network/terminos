@@ -4,7 +4,8 @@ use std::{
     ops::ControlFlow,
     path::Path,
     sync::Arc,
-    time::Duration
+    time::Duration,
+    borrow::Cow
 };
 use anyhow::{Result, Context};
 use indexmap::IndexSet;
@@ -48,7 +49,7 @@ use terminos_common::{
     serializer::Serializer,
     tokio,
     transaction::{
-        builder::{FeeBuilder, MultiSigBuilder, TransactionTypeBuilder, TransferBuilder},
+        builder::{FeeBuilder, MultiSigBuilder, TransactionTypeBuilder, TransferBuilder, EnergyBuilder},
         multisig::{MultiSig, SignatureId},
         BurnPayload,
         MultiSigPayload,
@@ -583,6 +584,30 @@ async fn setup_wallet_command_manager(wallet: Arc<Wallet>, command_manager: &Com
         vec![Arg::new("asset", ArgType::Hash)],
         CommandHandler::Async(async_handler!(balance))
     ))?;
+    command_manager.add_command(Command::new(
+        "energy",
+        "Show energy information (frozen TOS, total energy, used energy, available energy)",
+        CommandHandler::Async(async_handler!(energy))
+    ))?;
+    command_manager.add_command(Command::with_optional_arguments(
+        "freeze_tos",
+        "Freeze TOS to get energy for free transfers with duration-based rewards",
+        vec![
+            Arg::new("amount", ArgType::String),
+            Arg::new("duration", ArgType::String),
+            Arg::new("confirm", ArgType::Bool)
+        ],
+        CommandHandler::Async(async_handler!(freeze_tos))
+    ))?;
+    command_manager.add_command(Command::with_optional_arguments(
+        "unfreeze_tos",
+        "Unfreeze TOS from energy (release frozen TOS)",
+        vec![
+            Arg::new("amount", ArgType::String),
+            Arg::new("confirm", ArgType::Bool)
+        ],
+        CommandHandler::Async(async_handler!(unfreeze_tos))
+    ))?;
     command_manager.add_command(Command::with_optional_arguments(
         "history",
         "Show all your transactions",
@@ -821,7 +846,7 @@ async fn open_wallet(manager: &CommandManager, _: ArgumentManager) -> Result<(),
     };
 
     manager.message("Wallet sucessfully opened");
-    apply_config(config, &wallet, #[cfg(feature = "api_server")] prompt).await;
+    apply_config(config, &wallet, #[cfg(feature = "api_server")] &prompt).await;
 
     setup_wallet_command_manager(wallet, manager).await?;
 
@@ -1347,25 +1372,78 @@ async fn balance(manager: &CommandManager, mut arguments: ArgumentManager) -> Re
 
     if arguments.has_argument("asset") {
         let asset = arguments.get_value("asset")?.to_hash()?;
-        let balance = storage.get_plaintext_balance_for(&asset).await?;
-        let data = storage.get_asset(&asset).await?;
+        let balance = storage.get_plaintext_balance_for(&asset).await.context("Error while retrieving balance")?;
+        let data = storage.get_asset(&asset).await.context("Error while retrieving asset data")?;
         manager.message(format!("Balance for asset {} ({}): {}", data.get_name(), asset, format_coin(balance, data.get_decimals())));
     } else {
-        let assets = storage.get_assets_with_data().await?;
+        let assets = storage.get_assets_with_data().await.context("Error while retrieving assets")?;
         if assets.is_empty() {
             manager.message("No assets found");
-            return Ok(())
-        }
-
-        for (asset, data) in assets {
-            let balance = storage.get_plaintext_balance_for(&asset).await
-                .context(format!("Error while retrieving balance for asset {asset}"))?;
-            if balance > 0 {
-                manager.message(format!("Balance for asset {} ({}): {}", data.get_name(), asset, format_coin(balance, data.get_decimals())));
+        } else {
+            for (asset, data) in assets {
+                let balance = storage.get_plaintext_balance_for(&asset).await.context("Error while retrieving balance")?;
+                if balance > 0 {
+                    manager.message(format!("Balance for asset {} ({}): {}", data.get_name(), asset, format_coin(balance, data.get_decimals())));
+                }
             }
         }
     }
+    Ok(())
+}
 
+async fn energy(manager: &CommandManager, _: ArgumentManager) -> Result<(), CommandError> {
+    let context = manager.get_context().lock()?;
+    let wallet: &Arc<Wallet> = context.get()?;
+    
+    if !wallet.is_online().await {
+        manager.error("Wallet is not connected to a daemon. Please enable online mode first.");
+        return Ok(());
+    }
+
+    let network_handler = wallet.get_network_handler().lock().await;
+    if let Some(handler) = network_handler.as_ref() {
+        let api = handler.get_api();
+        let address = wallet.get_address();
+        
+        match api.call(&"get_energy".to_string(), &terminos_common::api::daemon::GetEnergyParams {
+            address: Cow::Borrowed(&address)
+        }).await {
+            Ok(result) => {
+                let energy_result: terminos_common::api::daemon::GetEnergyResult = serde_json::from_value(result)
+                    .context("Failed to parse energy result")?;
+                
+                manager.message(format!("Energy Information for {}:", address));
+                manager.message(format!("  Frozen TOS: {} TOS", format_tos(energy_result.frozen_tos)));
+                manager.message(format!("  Total Energy: {} units", energy_result.total_energy));
+                manager.message(format!("  Used Energy: {} units", energy_result.used_energy));
+                manager.message(format!("  Available Energy: {} units", energy_result.available_energy));
+                manager.message(format!("  Last Update: topoheight {}", energy_result.last_update));
+                
+                if !energy_result.freeze_records.is_empty() {
+                    manager.message("  Freeze Records:");
+                    for (i, record) in energy_result.freeze_records.iter().enumerate() {
+                        manager.message(format!("    Record {}: {} TOS for {} days", i + 1, format_tos(record.amount), record.duration));
+                        manager.message(format!("      Energy Gained: {} units", record.energy_gained));
+                        manager.message(format!("      Freeze Time: topoheight {}", record.freeze_topoheight));
+                        manager.message(format!("      Unlock Time: topoheight {}", record.unlock_topoheight));
+                        
+                        if record.can_unlock {
+                            manager.message(format!("      Status: ✅ Unlockable"));
+                        } else {
+                            let remaining_days = record.remaining_blocks as f64 / (24.0 * 60.0 * 60.0);
+                            manager.message(format!("      Status: 🔒 Locked ({} days remaining)", remaining_days));
+                        }
+                    }
+                }
+            },
+            Err(e) => {
+                manager.error(format!("Failed to get energy information: {}", e));
+            }
+        }
+    } else {
+        manager.error("Wallet is not connected to a daemon");
+    }
+    
     Ok(())
 }
 
@@ -1453,40 +1531,6 @@ async fn clear_tx_cache(manager: &CommandManager, _: ArgumentManager) -> Result<
     let mut storage = wallet.get_storage().write().await;
     storage.clear_tx_cache();
     manager.message("Transaction cache has been cleared");
-    Ok(())
-}
-
-// Set your wallet in online mode
-#[cfg(feature = "network_handler")]
-async fn online_mode(manager: &CommandManager, mut arguments: ArgumentManager) -> Result<(), CommandError> {
-    let context = manager.get_context().lock()?;
-    let wallet: &Arc<Wallet> = context.get()?;
-    if wallet.is_online().await {
-        manager.error("Wallet is already online");
-    } else {
-        let daemon_address = if arguments.has_argument("daemon_address") {
-            arguments.get_value("daemon_address")?.to_string_value()?
-        } else {
-            DEFAULT_DAEMON_ADDRESS.to_string()
-        };
-
-        wallet.set_online_mode(&daemon_address, true).await.context("Couldn't enable online mode")?;
-        manager.message("Wallet is now online");
-    }
-    Ok(())
-}
-
-// Set your wallet in offline mode
-#[cfg(feature = "network_handler")]
-async fn offline_mode(manager: &CommandManager, _: ArgumentManager) -> Result<(), CommandError> {
-    let context = manager.get_context().lock()?;
-    let wallet: &Arc<Wallet> = context.get()?;
-    if !wallet.is_online().await {
-        manager.error("Wallet is already offline");
-    } else {
-        wallet.set_offline_mode().await.context("Error on offline mode")?;
-        manager.message("Wallet is now offline");
-    }
     Ok(())
 }
 
@@ -1836,4 +1880,198 @@ async fn broadcast_tx(wallet: &Wallet, manager: &CommandManager, tx: Transaction
         manager.warn("You are currently offline, transaction cannot be send automatically. Please send it manually to the network.");
         manager.message(format!("Transaction in hex format: {}", tx.to_hex()));
     }
+}
+
+// Set your wallet in online mode
+#[cfg(feature = "network_handler")]
+async fn online_mode(manager: &CommandManager, mut arguments: ArgumentManager) -> Result<(), CommandError> {
+    let context = manager.get_context().lock()?;
+    let wallet: &Arc<Wallet> = context.get()?;
+    if wallet.is_online().await {
+        manager.error("Wallet is already online");
+    } else {
+        let daemon_address = if arguments.has_argument("daemon_address") {
+            arguments.get_value("daemon_address")?.to_string_value()?
+        } else {
+            DEFAULT_DAEMON_ADDRESS.to_string()
+        };
+
+        wallet.set_online_mode(&daemon_address, true).await.context("Couldn't enable online mode")?;
+        manager.message("Wallet is now online");
+    }
+    Ok(())
+}
+
+// Set your wallet in offline mode
+#[cfg(feature = "network_handler")]
+async fn offline_mode(manager: &CommandManager, _: ArgumentManager) -> Result<(), CommandError> {
+    let context = manager.get_context().lock()?;
+    let wallet: &Arc<Wallet> = context.get()?;
+    if !wallet.is_online().await {
+        manager.error("Wallet is already offline");
+    } else {
+        wallet.set_offline_mode().await.context("Error on offline mode")?;
+        manager.message("Wallet is now offline");
+    }
+    Ok(())
+}
+
+// Freeze TOS to get energy for free transfers
+async fn freeze_tos(manager: &CommandManager, mut args: ArgumentManager) -> Result<(), CommandError> {
+    let prompt = manager.get_prompt();
+    let context = manager.get_context().lock()?;
+    let wallet: &Arc<Wallet> = context.get()?;
+
+    // Check if wallet is online
+    if !wallet.is_online().await {
+        manager.error("Wallet is not connected to a daemon. Please use 'online_mode' first.");
+        return Ok(())
+    }
+
+    // Get TOS balance
+    let (max_balance, asset_data) = {
+        let storage = wallet.get_storage().read().await;
+        let balance = storage.get_plaintext_balance_for(&TERMINOS_ASSET).await.unwrap_or(0);
+        let asset = storage.get_asset(&TERMINOS_ASSET).await?;
+        (balance, asset)
+    };
+
+    // Read amount
+    let amount = if args.has_argument("amount") {
+        args.get_value("amount")?.to_string_value()?
+    } else {
+        prompt.read(
+            prompt.colorize_string(Color::Green, &format!("Amount to freeze (max: {}): ", format_coin(max_balance, asset_data.get_decimals())))
+        ).await.context("Error while reading amount")?
+    };
+
+    let amount = from_coin(amount, asset_data.get_decimals()).context("Invalid amount")?;
+    
+    if amount == 0 {
+        manager.error("Amount must be greater than 0");
+        return Ok(())
+    }
+
+    if amount > max_balance {
+        manager.error("Insufficient TOS balance");
+        return Ok(())
+    }
+
+    // Read freeze duration
+    let duration = if args.has_argument("duration") {
+        let duration_str = args.get_value("duration")?.to_string_value()?;
+        match duration_str.as_str() {
+            "3" | "3d" | "3days" => terminos_common::account::energy::FreezeDuration::Day3,
+            "7" | "7d" | "7days" => terminos_common::account::energy::FreezeDuration::Day7,
+            "14" | "14d" | "14days" => terminos_common::account::energy::FreezeDuration::Day14,
+            _ => {
+                manager.error("Invalid duration. Please choose: 3, 7, or 14 days");
+                return Ok(())
+            }
+        }
+    } else {
+        // Show duration options and let user choose
+        manager.message("Choose freeze duration:");
+        manager.message("  1. 3 days  (1.0x reward multiplier)");
+        manager.message("  2. 7 days  (1.1x reward multiplier)");
+        manager.message("  3. 14 days (1.2x reward multiplier)");
+        
+        let choice: String = prompt.read(
+            prompt.colorize_string(Color::Green, "Enter choice (1-3): ")
+        ).await.context("Error while reading duration choice")?;
+        
+        match choice.as_str() {
+            "1" => terminos_common::account::energy::FreezeDuration::Day3,
+            "2" => terminos_common::account::energy::FreezeDuration::Day7,
+            "3" => terminos_common::account::energy::FreezeDuration::Day14,
+            _ => {
+                manager.error("Invalid choice. Please enter 1, 2, or 3");
+                return Ok(())
+            }
+        }
+    };
+
+    // Calculate energy gain
+    let energy_gain = (amount as f64 * duration.reward_multiplier()) as u64;
+    
+    manager.message(format!("Freezing {} TOS for {} days", format_coin(amount, asset_data.get_decimals()), duration.name()));
+    manager.message(format!("Reward multiplier: {}x", duration.reward_multiplier()));
+    manager.message(format!("Energy gained: {} units", energy_gain));
+
+    if !args.get_flag("confirm")? && !prompt.ask_confirmation().await.context("Error while confirming action")? {
+        manager.message("Transaction has been aborted");
+        return Ok(())
+    }
+
+    manager.message("Building transaction...");
+    
+    // Create energy transaction builder with duration
+    let energy_builder = EnergyBuilder::freeze_tos(amount, duration);
+    
+    let tx_type = TransactionTypeBuilder::Energy(energy_builder);
+    
+    let tx = match wallet.create_transaction(tx_type, FeeBuilder::default()).await {
+        Ok(tx) => tx,
+        Err(e) => {
+            manager.error(&format!("Error while creating transaction: {}", e));
+            return Ok(())
+        }
+    };
+
+    broadcast_tx(wallet, manager, tx).await;
+    Ok(())
+}
+
+// Unfreeze TOS from energy
+async fn unfreeze_tos(manager: &CommandManager, mut args: ArgumentManager) -> Result<(), CommandError> {
+    let prompt = manager.get_prompt();
+    let context = manager.get_context().lock()?;
+    let wallet: &Arc<Wallet> = context.get()?;
+
+    // Check if wallet is online
+    if !wallet.is_online().await {
+        manager.error("Wallet is not connected to a daemon. Please use 'online_mode' first.");
+        return Ok(())
+    }
+
+    // Read amount
+    let amount = if args.has_argument("amount") {
+        args.get_value("amount")?.to_string_value()?
+    } else {
+        prompt.read(
+            prompt.colorize_string(Color::Green, "Amount to unfreeze: ")
+        ).await.context("Error while reading amount")?
+    };
+
+    let amount = from_coin(amount, 8).context("Invalid amount")?; // TOS has 8 decimals
+    
+    if amount == 0 {
+        manager.error("Amount must be greater than 0");
+        return Ok(())
+    }
+
+    manager.message(format!("Unfreezing {} TOS from energy", format_coin(amount, 8)));
+
+    if !args.get_flag("confirm")? && !prompt.ask_confirmation().await.context("Error while confirming action")? {
+        manager.message("Transaction has been aborted");
+        return Ok(())
+    }
+
+    manager.message("Building transaction...");
+    
+    // Create energy transaction builder
+    let energy_builder = EnergyBuilder::unfreeze_tos(amount);
+    
+    let tx_type = TransactionTypeBuilder::Energy(energy_builder);
+    
+    let tx = match wallet.create_transaction(tx_type, FeeBuilder::default()).await {
+        Ok(tx) => tx,
+        Err(e) => {
+            manager.error(&format!("Error while creating transaction: {}", e));
+            return Ok(())
+        }
+    };
+
+    broadcast_tx(wallet, manager, tx).await;
+    Ok(())
 }

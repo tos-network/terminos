@@ -195,6 +195,32 @@ pub struct GetBalanceAtTopoHeightParams<'a> {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct GetEnergyParams<'a> {
+    pub address: Cow<'a, Address>
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct GetEnergyResult {
+    pub frozen_tos: u64,
+    pub total_energy: u64,
+    pub used_energy: u64,
+    pub available_energy: u64,
+    pub last_update: u64,
+    pub freeze_records: Vec<FreezeRecordInfo>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct FreezeRecordInfo {
+    pub amount: u64,
+    pub duration: String,
+    pub freeze_topoheight: u64,
+    pub unlock_topoheight: u64,
+    pub energy_gained: u64,
+    pub can_unlock: bool,
+    pub remaining_blocks: u64,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct GetNonceParams<'a> {
     pub address: Cow<'a, Address>
 }

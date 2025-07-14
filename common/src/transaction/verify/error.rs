@@ -52,4 +52,8 @@ pub enum VerificationError<T> {
     MaxGasReached,
     #[error("Contract not found")]
     ContractNotFound,
+    #[error("Insufficient energy: required {0} energy")]
+    InsufficientEnergy(u64),
+    #[error("Energy fees can only be used for Transfer transactions")]
+    EnergyFeesNotAllowedForNonTransfer,
 }

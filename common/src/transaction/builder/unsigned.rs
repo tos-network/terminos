@@ -20,7 +20,8 @@ use crate::{
         SourceCommitment,
         Transaction,
         TransactionType,
-        TxVersion
+        TxVersion,
+        FeeType
     }
 };
 
@@ -33,6 +34,7 @@ pub struct UnsignedTransaction {
     source: PublicKey,
     data: TransactionType,
     fee: u64,
+    fee_type: FeeType,
     nonce: Nonce,
     source_commitments: Vec<SourceCommitment>,
     reference: Reference,
@@ -47,6 +49,7 @@ impl UnsignedTransaction {
         source: PublicKey,
         data: TransactionType,
         fee: u64,
+        fee_type: FeeType,
         nonce: Nonce,
         source_commitments: Vec<SourceCommitment>,
         reference: Reference,
@@ -57,6 +60,7 @@ impl UnsignedTransaction {
             source,
             data,
             fee,
+            fee_type,
             nonce,
             source_commitments,
             reference,
@@ -86,6 +90,7 @@ impl UnsignedTransaction {
         self.source.write(writer);
         self.data.write(writer);
         self.fee.write(writer);
+        self.fee_type.write(writer);
         self.nonce.write(writer);
 
         writer.write_u8(self.source_commitments.len() as u8);
@@ -119,11 +124,12 @@ impl UnsignedTransaction {
         let bytes = self.to_bytes();
         let signature = keypair.sign(&bytes);
 
-        Transaction::new(
+        Transaction::new_with_fee_type(
             self.version,
             self.source,
             self.data,
             self.fee,
+            self.fee_type,
             self.nonce,
             self.source_commitments,
             self.range_proof,
@@ -147,6 +153,7 @@ impl Serializer for UnsignedTransaction {
         let source = PublicKey::read(reader)?;
         let data = TransactionType::read(reader)?;
         let fee = reader.read_u64()?;
+        let fee_type = FeeType::read(reader)?;
         let nonce = Nonce::read(reader)?;
 
         let source_commitments_len = reader.read_u8()?;
@@ -169,6 +176,7 @@ impl Serializer for UnsignedTransaction {
             source,
             data,
             fee,
+            fee_type,
             nonce,
             source_commitments,
             reference,
@@ -182,6 +190,7 @@ impl Serializer for UnsignedTransaction {
             + self.source.size()
             + self.data.size()
             + self.fee.size()
+            + self.fee_type.size()
             + self.nonce.size()
             + 1; // source_commitments length
 

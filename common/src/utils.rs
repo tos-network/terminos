@@ -11,6 +11,8 @@ use crate::{
     varuint::VarUint
 };
 
+pub mod energy_fee;
+
 #[macro_export]
 macro_rules! async_handler {
     ($func: expr) => {
@@ -64,11 +66,8 @@ pub fn from_coin(value: impl Into<String>, coin_decimals: u8) -> Option<u64> {
     }
 }
 
-// return the fee for a transaction based on its size in bytes
-// the fee is calculated in atomic units for XEL
-// Sending to a newly created address will increase the fee
-// Each transfers output will also increase the fee
-// Each signature of a multisig add a small overhead due to the verfications
+// Legacy fee calculation function (deprecated - use energy-based model instead)
+// This function is kept for backward compatibility during transition
 pub fn calculate_tx_fee(tx_size: usize, output_count: usize, new_addresses: usize, multisig: usize) -> u64 {
     let mut size_in_kb = tx_size as u64 / BYTES_PER_KB as u64;
 
@@ -81,6 +80,18 @@ pub fn calculate_tx_fee(tx_size: usize, output_count: usize, new_addresses: usiz
     + output_count as u64 * FEE_PER_TRANSFER
     + new_addresses as u64 * FEE_PER_ACCOUNT_CREATION
     + multisig as u64 * FEE_PER_TRANSFER
+}
+
+// New energy-based fee calculation function
+pub fn calculate_energy_fee(tx_size: usize, output_count: usize, new_addresses: usize) -> u64 {
+    use crate::utils::energy_fee::EnergyFeeCalculator;
+    
+    // Only transfer operations consume energy, so we only need these 3 parameters
+    EnergyFeeCalculator::calculate_energy_cost(
+        tx_size,
+        output_count,
+        new_addresses
+    )
 }
 
 const HASHRATE_FORMATS: [&str; 7] = ["H/s", "KH/s", "MH/s", "GH/s", "TH/s", "PH/s", "EH/s"];

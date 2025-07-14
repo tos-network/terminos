@@ -12,7 +12,7 @@ use serde::{Serialize, Deserialize};
 use indexmap::IndexSet;
 use log::{debug, info, trace, warn};
 use terminos_common::{
-    config::{BYTES_PER_KB, FEE_PER_KB},
+    config::BYTES_PER_KB,
     account::Nonce,
     api::daemon::FeeRatesEstimated,
     block::{BlockVersion, TopoHeight},
@@ -87,12 +87,15 @@ impl Mempool {
         // Next 40%
         let normal_priority_count = len * 40 / 100;
 
+        // Use energy-based default fee rate (10 energy per KB)
+        let default_energy_rate = 10;
+
         if len == 0 || high_priority_count == 0 || normal_priority_count == 0 {
             return FeeRatesEstimated {
-                high: FEE_PER_KB,
-                medium: FEE_PER_KB,
-                low: FEE_PER_KB,
-                default: FEE_PER_KB
+                high: default_energy_rate,
+                medium: default_energy_rate,
+                low: default_energy_rate,
+                default: default_energy_rate
             };
         }
 
@@ -115,7 +118,7 @@ impl Mempool {
             high,
             medium,
             low,
-            default: FEE_PER_KB
+            default: default_energy_rate
         }
     }
 
@@ -638,7 +641,7 @@ impl AccountCache {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
 
     #[test]
     fn test_estimated_fee_rates() {
@@ -649,32 +652,32 @@ mod tests {
         assert_eq!(estimated.high, 50000);
         assert_eq!(estimated.medium, 35000);
         assert_eq!(estimated.low, 15000);
-        assert_eq!(estimated.default, FEE_PER_KB);
+        assert_eq!(estimated.default, 10);
     }
 
     #[test]
     fn test_estimated_fee_rates_no_tx() {
         let estimated = super::Mempool::internal_estimate_fee_rates(Vec::new());
-        assert_eq!(estimated.high, FEE_PER_KB);
-        assert_eq!(estimated.medium, FEE_PER_KB);
-        assert_eq!(estimated.low, FEE_PER_KB);
-        assert_eq!(estimated.default, FEE_PER_KB);
+        assert_eq!(estimated.high, 10);
+        assert_eq!(estimated.medium, 10);
+        assert_eq!(estimated.low, 10);
+        assert_eq!(estimated.default, 10);
     }
 
     #[test]
     fn test_estimated_fee_rates_expensive_tx() {
-        let fee_rates = vec![FEE_PER_KB * 1000];
+        let fee_rates = vec![10 * 1000];
         let estimated = super::Mempool::internal_estimate_fee_rates(fee_rates);
-        assert_eq!(estimated.high, FEE_PER_KB);
-        assert_eq!(estimated.medium, FEE_PER_KB);
-        assert_eq!(estimated.low, FEE_PER_KB);
-        assert_eq!(estimated.default, FEE_PER_KB);
+        assert_eq!(estimated.high, 10);
+        assert_eq!(estimated.medium, 10);
+        assert_eq!(estimated.low, 10);
+        assert_eq!(estimated.default, 10);
 
-        let fee_rates = vec![FEE_PER_KB * 2, FEE_PER_KB * 2, FEE_PER_KB * 3, FEE_PER_KB * 2, FEE_PER_KB * 1000];
+        let fee_rates = vec![10 * 2, 10 * 2, 10 * 3, 10 * 2, 10 * 1000];
         let estimated = super::Mempool::internal_estimate_fee_rates(fee_rates);
-        assert_eq!(estimated.high, FEE_PER_KB * 1000);
-        assert_eq!(estimated.medium, (FEE_PER_KB as f64 * 2.5) as u64);
-        assert_eq!(estimated.low, FEE_PER_KB * 2);
-        assert_eq!(estimated.default, FEE_PER_KB);
+        assert_eq!(estimated.high, 10 * 1000);
+        assert_eq!(estimated.medium, (10 as f64 * 2.5) as u64);
+        assert_eq!(estimated.low, 10 * 2);
+        assert_eq!(estimated.default, 10);
     }
 }

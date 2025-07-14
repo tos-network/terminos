@@ -216,6 +216,34 @@ pub struct GetBalanceParams {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct GetEnergyParams {
+    // No parameters needed, uses wallet's own address
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct GetEnergyResult {
+    pub frozen_tos: u64,
+    pub total_energy: u64,
+    pub used_energy: u64,
+    pub available_energy: u64,
+    pub last_update: u64
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct FreezeTosParams {
+    /// Amount of TOS to freeze for energy
+    pub amount: u64,
+    /// Freeze duration (3, 7, or 14 days) affecting reward multiplier
+    pub duration: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct UnfreezeTosParams {
+    /// Amount of TOS to unfreeze from energy
+    pub amount: u64,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct GetTransactionParams {
     pub hash: Hash
 }

@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use log::{debug, trace};
 use indexmap::IndexMap;
 use terminos_common::{
-    account::{BalanceType, Nonce, VersionedNonce},
+    account::{BalanceType, Nonce, VersionedNonce, EnergyResource},
     asset::VersionedAssetData,
     block::{Block, BlockVersion, TopoHeight},
     contract::{
@@ -305,6 +305,36 @@ impl<'a, S: Storage> BlockchainApplyState<'a, S, BlockchainError> for Applicable
     ) -> Result<(), BlockchainError> {
         self.remove_contract_module_internal(hash).await
     }
+
+    /// Get energy resource for an account
+    async fn get_energy_resource(&self, account: &PublicKey) -> Result<EnergyResource, BlockchainError> {
+        // Try to get energy resource from storage
+        match self.inner.storage.get_energy_resource(account).await {
+            Ok(Some(energy)) => Ok(energy),
+            Ok(None) => {
+                // If no energy resource exists, create a new one
+                debug!("Creating new energy resource for account {}", account.as_address(self.inner.storage.is_mainnet()));
+                Ok(EnergyResource::new())
+            },
+            Err(e) => {
+                // If storage error occurs, return default energy resource
+                debug!("Storage error getting energy resource for account {}: {:?}, using default", 
+                       account.as_address(self.inner.storage.is_mainnet()), e);
+                Ok(EnergyResource::new())
+            }
+        }
+    }
+
+    /// Update energy resource for an account
+    async fn update_energy_resource(&mut self, account: &PublicKey, energy: EnergyResource) -> Result<(), BlockchainError> {
+        // Store energy resource in memory for later persistence
+        // This will be saved to storage in apply_changes()
+        self.inner.energy_resources.insert(account.clone(), energy.clone());
+        
+        debug!("Updated energy resource for account {}: {:?}", 
+               account.as_address(self.inner.storage.is_mainnet()), energy);
+        Ok(())
+    }
 }
 
 impl<'a, S: Storage> Deref for ApplicableChainState<'a, S> {
@@ -586,6 +616,13 @@ impl<'a, S: Storage> ApplicableChainState<'a, S> {
 
         trace!("Saving burned supply {} at topoheight {}", self.burned_supply, self.inner.topoheight);
         self.inner.storage.set_burned_supply_at_topo_height(self.inner.topoheight, self.burned_supply)?;
+
+        // Apply energy resource changes
+        for (account, energy) in self.inner.energy_resources {
+            trace!("Saving energy resource for {} at topoheight {}: {:?}", 
+                   account.as_address(self.inner.storage.is_mainnet()), self.inner.topoheight, energy);
+            self.inner.storage.set_energy_resource(&account, self.inner.topoheight, &energy).await?;
+        }
 
         Ok(())
     }

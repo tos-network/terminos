@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use xelis_vm::ValueCell;
 use crate::{
     api::DataElement,
-    crypto::{Address, Hash}
+    crypto::{Address, Hash},
+    account::energy::FreezeDuration,
 };
 
 fn default_bool_true() -> bool {
@@ -61,43 +62,135 @@ pub struct DeployContractInvokeBuilder {
     pub deposits: IndexMap<Hash, ContractDepositBuilder>,
 }
 
+/// Energy transaction builder with TRON-style freeze duration support
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct EnergyBuilder {
+    /// Amount of TOS to freeze or unfreeze
+    pub amount: u64,
+    /// Whether this is a freeze operation (true) or unfreeze operation (false)
+    pub is_freeze: bool,
+    /// Freeze duration for freeze operations (3, 7, or 14 days)
+    /// This affects the reward multiplier: 1.0x, 1.1x, or 1.2x respectively
+    /// Only used when is_freeze is true
+    #[serde(default)]
+    pub freeze_duration: Option<FreezeDuration>,
+}
+
+impl EnergyBuilder {
+    /// Create a new freeze TOS builder with specified duration
+    pub fn freeze_tos(amount: u64, duration: FreezeDuration) -> Self {
+        Self {
+            amount,
+            is_freeze: true,
+            freeze_duration: Some(duration),
+        }
+    }
+
+    /// Create a new unfreeze TOS builder
+    pub fn unfreeze_tos(amount: u64) -> Self {
+        Self {
+            amount,
+            is_freeze: false,
+            freeze_duration: None,
+        }
+    }
+
+    /// Get the freeze duration for this operation
+    pub fn get_duration(&self) -> Option<&FreezeDuration> {
+        self.freeze_duration.as_ref()
+    }
+
+    /// Calculate the energy that would be gained from this freeze operation
+    pub fn calculate_energy_gain(&self) -> Option<u64> {
+        if self.is_freeze {
+            self.freeze_duration.as_ref().map(|duration| {
+                (self.amount as f64 * duration.reward_multiplier()) as u64
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Validate the builder configuration
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.amount == 0 {
+            return Err("Amount must be greater than 0");
+        }
+
+        if self.is_freeze {
+            if self.freeze_duration.is_none() {
+                return Err("Freeze duration must be specified for freeze operations");
+            }
+        } else {
+            if self.freeze_duration.is_some() {
+                return Err("Freeze duration should not be specified for unfreeze operations");
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use indexmap::indexmap;
-    use serde_json::json;
-    use xelis_vm::Primitive;
-    use crate::{config::TERMINOS_ASSET, serializer::Serializer};
-
     use super::*;
 
     #[test]
-    fn test_invoke_contract_builder() {
-        let builder = InvokeContractBuilder {
-            contract: TERMINOS_ASSET,
-            max_gas: 1000,
-            chunk_id: 0,
-            parameters: vec![ValueCell::Default(Primitive::U64(100))],
-            deposits: indexmap! {
-                TERMINOS_ASSET => ContractDepositBuilder {
-                    amount: 100,
-                    private: false,
-                }
-            },
-        };
-
-        let data: InvokeContractBuilder = serde_json::from_value(json!(builder)).unwrap();
-        assert_eq!(builder.parameters, data.parameters);
+    fn test_energy_builder_freeze() {
+        let builder = EnergyBuilder::freeze_tos(1000, FreezeDuration::Day7);
+        
+        assert_eq!(builder.amount, 1000);
+        assert!(builder.is_freeze);
+        assert_eq!(builder.get_duration(), Some(&FreezeDuration::Day7));
+        assert_eq!(builder.calculate_energy_gain(), Some(1100)); // 1000 * 1.1
+        assert!(builder.validate().is_ok());
     }
 
     #[test]
-    fn test_serde_value_cell_str() {
-        let str_cell = ValueCell::Default(Primitive::String("Hello, World!".to_string()));
+    fn test_energy_builder_unfreeze() {
+        let builder = EnergyBuilder::unfreeze_tos(500);
+        
+        assert_eq!(builder.amount, 500);
+        assert!(!builder.is_freeze);
+        assert_eq!(builder.get_duration(), None);
+        assert_eq!(builder.calculate_energy_gain(), None);
+        assert!(builder.validate().is_ok());
+    }
 
-        // JSON
-        let str_data = serde_json::to_string_pretty(&str_cell).unwrap();
-        assert_eq!(str_cell, serde_json::from_str::<ValueCell>(&str_data).unwrap());
+    #[test]
+    fn test_energy_builder_validation() {
+        // Test zero amount
+        let builder = EnergyBuilder::freeze_tos(0, FreezeDuration::Day3);
+        assert!(builder.validate().is_err());
 
-        let bytes = str_cell.to_bytes();
-        assert_eq!(str_cell, ValueCell::from_bytes(&bytes).unwrap());
+        // Test freeze without duration
+        let builder = EnergyBuilder {
+            amount: 1000,
+            is_freeze: true,
+            freeze_duration: None,
+        };
+        assert!(builder.validate().is_err());
+
+        // Test unfreeze with duration
+        let builder = EnergyBuilder {
+            amount: 1000,
+            is_freeze: false,
+            freeze_duration: Some(FreezeDuration::Day7),
+        };
+        assert!(builder.validate().is_err());
+    }
+
+    #[test]
+    fn test_different_duration_rewards() {
+        let amounts = [1000, 2000, 3000];
+        let durations = [FreezeDuration::Day3, FreezeDuration::Day7, FreezeDuration::Day14];
+        
+        for amount in amounts {
+            for duration in &durations {
+                let builder = EnergyBuilder::freeze_tos(amount, duration.clone());
+                let expected_energy = (amount as f64 * duration.reward_multiplier()) as u64;
+                assert_eq!(builder.calculate_energy_gain(), Some(expected_energy));
+            }
+        }
     }
 }

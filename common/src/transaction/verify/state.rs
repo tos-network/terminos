@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use indexmap::IndexMap;
 use xelis_vm::{Environment, Module};
 use crate::{
-    account::Nonce,
+    account::{Nonce, EnergyResource},
     block::{Block, BlockVersion},
     contract::{
         AssetChanges,
@@ -19,7 +19,8 @@ use crate::{
             Ciphertext,
             CompressedPublicKey
         },
-        Hash
+        Hash,
+        PublicKey
     },
     transaction::{
         ContractDeposit,
@@ -182,4 +183,10 @@ pub trait BlockchainApplyState<'a, P: ContractProvider, E>: BlockchainVerificati
         &mut self,
         hash: &'a Hash
     ) -> Result<(), E>;
+
+    /// Get energy resource for an account
+    async fn get_energy_resource(&self, account: &PublicKey) -> Result<EnergyResource, E>;
+
+    /// Update energy resource for an account
+    async fn update_energy_resource(&mut self, account: &PublicKey, energy: EnergyResource) -> Result<(), E>;
 }

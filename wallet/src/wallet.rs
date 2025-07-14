@@ -882,7 +882,7 @@ impl Wallet {
         Ok(())
     }
 
-    // Estimate fees for a given transaction type
+    // Estimate fees for a given transaction type using energy-based model
     // Estimated fees returned are the minimum required to be valid on chain
     pub async fn estimate_fees(&self, tx_type: TransactionTypeBuilder, fee: FeeBuilder) -> Result<u64, WalletError> {
         trace!("estimate fees");

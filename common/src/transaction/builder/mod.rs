@@ -48,6 +48,7 @@ use crate::{
         SIGNATURE_SIZE
     },
     serializer::Serializer,
+    utils::calculate_energy_fee,
     utils::calculate_tx_fee
 };
 use thiserror::Error;
@@ -61,6 +62,8 @@ use super::{
     BurnPayload,
     ContractDeposit,
     DeployContractPayload,
+    EnergyPayload,
+    FeeType,
     InvokeConstructorPayload,
     InvokeContractPayload,
     MultiSigPayload,
@@ -116,6 +119,10 @@ pub enum GenerationError<T> {
     InvalidModule,
     #[error("Configured max gas is above the network limit")]
     MaxGasReached,
+    #[error("Energy fees are not allowed for non-transfer transactions")]
+    EnergyFeesNotAllowedForNonTransfer,
+    #[error("Invalid energy payload: {0}")]
+    InvalidEnergyPayload(&'static str),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -127,6 +134,7 @@ pub enum TransactionTypeBuilder {
     MultiSig(MultiSigBuilder),
     InvokeContract(InvokeContractBuilder),
     DeployContract(DeployContractBuilder),
+    Energy(EnergyBuilder),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -135,7 +143,8 @@ pub struct TransactionBuilder {
     source: CompressedPublicKey,
     required_thresholds: Option<u8>,
     data: TransactionTypeBuilder,
-    fee_builder: FeeBuilder
+    fee_builder: FeeBuilder,
+    fee_type: Option<FeeType>, // Explicit fee type, None means use default logic
 }
 
 // Internal struct for build
@@ -230,7 +239,29 @@ impl TransactionBuilder {
             required_thresholds,
             data,
             fee_builder,
+            fee_type: None, // Default to None, will be determined during build
         }
+    }
+
+    /// Create a transaction builder with explicit fee type
+    pub fn with_fee_type(mut self, fee_type: FeeType) -> Self {
+        self.fee_type = Some(fee_type);
+        self
+    }
+
+    /// Create a transaction builder with energy-based fees (fee = 0)
+    /// Energy can only be used for Transfer transactions to provide free TOS and other token transfers
+    pub fn with_energy_fees(mut self) -> Self {
+        self.fee_builder = FeeBuilder::Value(0);
+        self.fee_type = Some(FeeType::Energy);
+        self
+    }
+
+    /// Create a transaction builder with TOS-based fees
+    pub fn with_tos_fees(mut self, fee: u64) -> Self {
+        self.fee_builder = FeeBuilder::Value(fee);
+        self.fee_type = Some(FeeType::TOS);
+        self
     }
 
     /// Estimate by hand the bytes size of a final TX
@@ -245,6 +276,8 @@ impl TransactionBuilder {
         + 1
         // Fee u64
         + 8
+        // Fee type byte
+        + 1
         // Nonce u64
         + 8
         // Reference (hash, topo)
@@ -334,6 +367,10 @@ impl TransactionBuilder {
                     commitments_count += commitments;
                     size += deposits_size + invoke.max_gas.size();
                 }
+            },
+            TransactionTypeBuilder::Energy(_payload) => {
+                // Energy payload size: 1 byte for variant + 8 bytes for amount + 1 byte for is_freeze
+                size += 1 + 8 + 1;
             }
         };
 
@@ -397,7 +434,26 @@ impl TransactionBuilder {
                     (0, 0)
                 };
 
-                let expected_fee = calculate_tx_fee(size, transfers, new_addresses, self.required_thresholds.unwrap_or(0) as usize);
+                // For transfer transactions, use energy-based fee calculation
+                // For non-transfer transactions, use TOS-based fee calculation
+                let expected_fee = if matches!(self.data, TransactionTypeBuilder::Transfers(_)) {
+                    // Energy-based fee calculation for transfers
+                    calculate_energy_fee(
+                        size, 
+                        transfers, 
+                        new_addresses
+                    )
+                } else {
+                    // TOS-based fee calculation for non-transfer transactions
+                    // Use traditional fee calculation for non-transfer operations
+                    calculate_tx_fee(
+                        size, 
+                        transfers, 
+                        new_addresses, 
+                        self.required_thresholds.unwrap_or(0) as usize
+                    )
+                };
+                
                 match self.fee_builder {
                     FeeBuilder::Multiplier(multiplier) => (expected_fee as f64 * multiplier) as u64,
                     FeeBuilder::Boost(boost) => expected_fee + boost,
@@ -419,8 +475,12 @@ impl TransactionBuilder {
         deposits: &HashMap<Hash, DepositWithCommitment>,
     ) -> Ciphertext {
         if asset == &TERMINOS_ASSET {
-            // Fees are applied to the native blockchain asset only.
-            ct -= Scalar::from(fee);
+            // For transfer transactions with energy fees (fee = 0), no TOS deduction needed
+            // For all other transactions, apply TOS fees
+            if !(fee == 0 && matches!(self.data, TransactionTypeBuilder::Transfers(_))) {
+                // Fees are applied to the native blockchain asset only.
+                ct -= Scalar::from(fee);
+            }
         }
 
         match &self.data {
@@ -472,6 +532,12 @@ impl TransactionBuilder {
                 if *asset == TERMINOS_ASSET {
                     ct -= Scalar::from(BURN_PER_CONTRACT);
                 }
+            },
+            TransactionTypeBuilder::Energy(payload) => {
+                // Energy operations require TOS for freeze/unfreeze
+                if *asset == TERMINOS_ASSET {
+                    ct -= Scalar::from(payload.amount);
+                }
             }
         }
 
@@ -483,8 +549,11 @@ impl TransactionBuilder {
         let mut cost = 0;
 
         if *asset == TERMINOS_ASSET {
-            // Fees are applied to the native blockchain asset only.
-            cost += fee;
+            // For transfer transactions with energy fees (fee = 0), no TOS cost for fees
+            // For all other transactions, include TOS fees in cost
+            if !(fee == 0 && matches!(self.data, TransactionTypeBuilder::Transfers(_))) {
+                cost += fee;
+            }
         }
 
         match &self.data {
@@ -523,6 +592,12 @@ impl TransactionBuilder {
                     if *asset == TERMINOS_ASSET {
                         cost += invoke.max_gas;
                     }
+                }
+            },
+            TransactionTypeBuilder::Energy(payload) => {
+                // Energy operations require TOS fees for freeze/unfreeze
+                if *asset == TERMINOS_ASSET {
+                    cost += payload.amount;
                 }
             }
         }
@@ -636,6 +711,9 @@ impl TransactionBuilder {
         state: &mut B,
         source_keypair: &KeyPair,
     ) -> Result<UnsignedTransaction, GenerationError<B::Error>> {
+        // Save transaction type information early to avoid move issues
+        let is_transfer = matches!(self.data, TransactionTypeBuilder::Transfers(_));
+        
         // Compute the fees
         let fee = self.estimate_fees(state)?;
 
@@ -742,7 +820,11 @@ impl TransactionBuilder {
                     )?;
                 }
             },
-            _ => {}
+            TransactionTypeBuilder::Energy(_payload) => {
+                // Energy operations don't have deposits
+            },
+            TransactionTypeBuilder::Burn(_) => {},
+            TransactionTypeBuilder::MultiSig(_) => {}
         };
 
         let reference = state.get_reference();
@@ -935,8 +1017,12 @@ impl TransactionBuilder {
                         &None
                     );
                 }
-            }
-            _ => {}
+            },
+            TransactionTypeBuilder::Energy(_payload) => {
+                // Energy operations don't have deposits
+            },
+            TransactionTypeBuilder::Burn(_) => {},
+            TransactionTypeBuilder::MultiSig(_) => {}
         };
 
         let n_commitments = range_proof_values.len();
@@ -1035,6 +1121,30 @@ impl TransactionBuilder {
                         }
                     }),
                 })
+            },
+            TransactionTypeBuilder::Energy(payload) => {
+                // Create energy payload based on operation type with duration support
+                let energy_payload = if payload.is_freeze {
+                    // Validate freeze operation
+                    if let Some(duration) = &payload.freeze_duration {
+                        EnergyPayload::FreezeTos { 
+                            amount: payload.amount,
+                            duration: duration.clone(),
+                        }
+                    } else {
+                        return Err(GenerationError::InvalidEnergyPayload("Freeze duration must be specified for freeze operations"));
+                    }
+                } else {
+                    // Validate unfreeze operation
+                    if payload.freeze_duration.is_some() {
+                        return Err(GenerationError::InvalidEnergyPayload("Freeze duration should not be specified for unfreeze operations"));
+                    }
+                    EnergyPayload::UnfreezeTos { 
+                        amount: payload.amount 
+                    }
+                };
+
+                TransactionType::Energy(energy_payload)
             }
         };
 
@@ -1050,11 +1160,25 @@ impl TransactionBuilder {
         )
         .map_err(ProofGenerationError::from)?;
 
+        // Determine fee type: use explicit fee_type if set, otherwise use default logic
+        let fee_type = if let Some(explicit_fee_type) = self.fee_type {
+            explicit_fee_type
+        } else {
+            // Default logic: use TOS for all transactions
+            FeeType::TOS
+        };
+
+        // Validate that energy fees are only used for Transfer transactions
+        if fee_type == FeeType::Energy && !is_transfer {
+            return Err(GenerationError::EnergyFeesNotAllowedForNonTransfer);
+        }
+
         let transaction = UnsignedTransaction::new(
             self.version,
             self.source,
             data,
             fee,
+            fee_type,
             nonce,
             source_commitments,
             reference,
