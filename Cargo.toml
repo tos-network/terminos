@@ -9,9 +9,6 @@ members = [
     "genesis"
 ]
 
-# TODO: temporary until https://github.com/eira-fransham/crunchy/issues/15 is merged
-[patch.crates-io]
-crunchy = { git = "https://github.com/xelis-project/crunchy", branch = "master" }
 
 # cargo run --profile release-with-lto
 [profile.release-with-lto]
