@@ -1,6 +1,6 @@
 mod read_only;
 
-use xelis_vm::{
+use terminos_vm::{
     traits::{JSONHelper, Serializable},
     Context,
     FnInstance,

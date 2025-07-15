@@ -13,7 +13,7 @@ use serde::{
     Deserializer,
     de::Error
 };
-use xelis_vm::ValueCell;
+use terminos_vm::ValueCell;
 use crate::{
     account::{Nonce, CiphertextCache, VersionedBalance, VersionedNonce},
     block::{TopoHeight, Algorithm, BlockVersion, EXTRA_NONCE_SIZE},

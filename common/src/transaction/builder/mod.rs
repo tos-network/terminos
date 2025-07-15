@@ -15,7 +15,7 @@ use merlin::Transcript;
 use bulletproofs::RangeProof;
 use curve25519_dalek::Scalar;
 use serde::{Deserialize, Serialize};
-use xelis_vm::Module;
+use terminos_vm::Module;
 use std::{
     collections::{HashMap, HashSet},
     iter,

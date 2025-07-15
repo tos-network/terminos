@@ -7,7 +7,7 @@ use terminos_common::{
     crypto::{Hash, PublicKey},
     tokio::try_block_on
 };
-use xelis_vm::ValueCell;
+use terminos_vm::ValueCell;
 use crate::core::storage::{
     AccountProvider,
     AssetProvider,

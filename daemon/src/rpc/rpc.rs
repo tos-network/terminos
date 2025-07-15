@@ -61,9 +61,9 @@ use terminos_common::{
         TransactionType
     },
     utils::format_hashrate,
-    account::{
-        EnergyResource
-    },
+    // account::{
+    //     // EnergyResource
+    // },
 };
 use anyhow::Context as AnyContext;
 use human_bytes::human_bytes;

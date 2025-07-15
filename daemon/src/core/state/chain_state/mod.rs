@@ -31,8 +31,8 @@ use terminos_common::{
     utils::format_tos,
     versioned_type::VersionedState,
 };
-use xelis_environment::Environment;
-use xelis_vm::Module;
+use terminos_environment::Environment;
+use terminos_vm::Module;
 use crate::core::{
     error::BlockchainError,
     storage::Storage

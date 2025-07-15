@@ -6,7 +6,7 @@ use terminos_common::{
     serializer::Serializer,
     versioned_type::Versioned,
 };
-use xelis_vm::ValueCell;
+use terminos_vm::ValueCell;
 use crate::core::{
     error::{BlockchainError, DiskContext},
     storage::SledStorage

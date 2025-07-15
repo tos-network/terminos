@@ -1,5 +1,5 @@
 use anyhow::Context as AnyhowContext;
-use xelis_vm::{
+use terminos_vm::{
     impl_opaque,
     traits::Serializable,
     Context,

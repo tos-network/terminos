@@ -14,7 +14,7 @@ use terminos_common::{
     serializer::Serializer,
     versioned_type::Versioned
 };
-use xelis_vm::Module;
+use terminos_vm::Module;
 use crate::core::{
     error::{BlockchainError, DiskContext},
     storage::{SledStorage, CONTRACTS_COUNT}

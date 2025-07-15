@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use xelis_vm::ValueCell;
+use terminos_vm::ValueCell;
 
 use crate::{crypto::Hash, serializer::*};
 use super::ContractDeposit;

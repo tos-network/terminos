@@ -18,7 +18,7 @@ use curve25519_dalek::{
 use indexmap::IndexMap;
 use log::{debug, trace};
 use merlin::Transcript;
-use xelis_vm::ModuleValidator;
+use terminos_vm::ModuleValidator;
 use crate::{
     tokio::block_in_place_safe,
     account::Nonce,
@@ -55,7 +55,6 @@ use crate::{
         MAX_TRANSFER_COUNT
     },
     utils::calculate_energy_fee,
-    block::TopoHeight,
 };
 use super::{
     ContractDeposit,

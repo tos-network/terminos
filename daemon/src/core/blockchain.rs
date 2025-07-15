@@ -68,7 +68,7 @@ use terminos_common::{
     varuint::VarUint,
     contract::build_environment,
 };
-use xelis_vm::Environment;
+use terminos_vm::Environment;
 use crate::{
     config::{
         get_genesis_block_hash, get_hex_genesis_block, get_minimum_difficulty, get_difficulty_at_hard_fork,

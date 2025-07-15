@@ -2,7 +2,7 @@ use std::hash::Hasher;
 
 use anyhow::Context as AnyhowContext;
 use curve25519_dalek::Scalar;
-use xelis_vm::{impl_opaque, traits::{DynHash, Serializable}, Context, FnInstance, FnParams, FnReturnType, Primitive};
+use terminos_vm::{impl_opaque, traits::{DynHash, Serializable}, Context, FnInstance, FnParams, FnReturnType, Primitive};
 use crate::{
     account::CiphertextCache,
     contract::CIPHERTEXT_OPAQUE_ID,

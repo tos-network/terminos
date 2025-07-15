@@ -1,6 +1,6 @@
 use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Serialize};
-use xelis_vm::ValueCell;
+use terminos_vm::ValueCell;
 use crate::{
     api::DataElement,
     crypto::{Address, Hash},

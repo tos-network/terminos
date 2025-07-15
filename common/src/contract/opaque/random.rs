@@ -1,6 +1,6 @@
 use anyhow::Context as AnyhowContext;
 use log::debug;
-use xelis_vm::{
+use terminos_vm::{
     traits::{JSONHelper, Serializable},
     Context,
     FnInstance,

@@ -15,8 +15,8 @@ use terminos_common::{
         Transaction
     }
 };
-use xelis_environment::Environment;
-use xelis_vm::Module;
+use terminos_environment::Environment;
+use terminos_vm::Module;
 use crate::core::{
     error::BlockchainError,
     mempool::Mempool,

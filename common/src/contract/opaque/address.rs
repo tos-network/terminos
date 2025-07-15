@@ -1,4 +1,4 @@
-use xelis_vm::{
+use terminos_vm::{
     traits::Serializable,
     Context,
     EnvironmentError,

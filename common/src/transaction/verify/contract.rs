@@ -7,7 +7,7 @@ use anyhow::Context;
 use curve25519_dalek::Scalar;
 use log::{debug, trace, warn};
 use indexmap::IndexMap;
-use xelis_vm::{ValueCell, VM};
+use terminos_vm::{ValueCell, VM};
 
 use crate::{
     config::{TX_GAS_BURN_PERCENT, TERMINOS_ASSET},
@@ -58,8 +58,10 @@ impl Transaction {
         // Total used gas by the VM
         let (used_gas, exit_code) = block_in_place_safe::<_, Result<_, anyhow::Error>>(|| {
             // Create the VM
-            let module = contract_environment.module;
-            let mut vm = VM::new(module, contract_environment.environment);
+            let mut vm = VM::new(contract_environment.environment);
+
+            // Insert the module to load
+            vm.append_module(contract_environment.module)?;
 
             // Invoke the needed chunk
             // This is the first chunk to be called

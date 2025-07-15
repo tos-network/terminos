@@ -1,5 +1,5 @@
 use blake3::hash;
-use xelis_vm::{
+use terminos_vm::{
     Context,
     EnvironmentError,
     FnInstance,

@@ -1,4 +1,4 @@
-use xelis_vm::tid;
+use terminos_vm::tid;
 
 use crate::{
     account::CiphertextCache,

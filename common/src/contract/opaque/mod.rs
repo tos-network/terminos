@@ -9,11 +9,11 @@ mod memory_storage;
 
 use bulletproofs::RangeProof;
 use log::debug;
-use xelis_types::{
+use terminos_types::{
     register_opaque_json,
     impl_opaque
 };
-use xelis_vm::{tid, traits::JSON_REGISTRY, OpaqueWrapper};
+use terminos_vm::{tid, traits::JSON_REGISTRY, OpaqueWrapper};
 use crate::{
     account::CiphertextCache,
     block::Block,
@@ -122,7 +122,7 @@ mod tests {
 
     use super::*;
     use serde_json::json;
-    use xelis_vm::OpaqueWrapper;
+    use terminos_vm::OpaqueWrapper;
 
     #[test]
     fn test_address_serde() {

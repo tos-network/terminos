@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::HashMap};
 use async_trait::async_trait;
 use curve25519_dalek::Scalar;
 use indexmap::IndexSet;
-use xelis_vm::{Chunk, Environment, Module};
+use terminos_vm::{Chunk, Environment, Module};
 use crate::{
     account::{CiphertextCache, Nonce},
     api::{DataElement, DataValue},

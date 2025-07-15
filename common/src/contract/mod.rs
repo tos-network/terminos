@@ -14,8 +14,8 @@ use better_any::Tid;
 use indexmap::IndexMap;
 use log::{debug, info};
 use opaque::*;
-use xelis_builder::EnvironmentBuilder;
-use xelis_vm::{
+use terminos_builder::EnvironmentBuilder;
+use terminos_vm::{
     Context,
     FnInstance,
     FnParams,
@@ -121,28 +121,26 @@ pub fn build_environment<P: ContractProvider>() -> EnvironmentBuilder<'static> {
     // Register the constructor hook
     env.register_hook("constructor", vec![], Some(Type::U64));
 
-    env.get_mut_function("println", None, vec![Type::Any])
+    env.get_mut_function("println", None)
         .set_on_call(println_fn);
 
-    env.get_mut_function("debug", None, vec![Type::Any])
+    env.get_mut_function("debug", None)
         .set_on_call(debug_fn);
 
     // Opaque type but we provide getters
-    let tx_type = Type::Opaque(env.register_opaque::<OpaqueTransaction>("Transaction"));
-    let hash_type = Type::Opaque(env.register_opaque::<Hash>("Hash"));
-    let address_type = Type::Opaque(env.register_opaque::<Address>("Address"));
-    let random_type = Type::Opaque(env.register_opaque::<OpaqueRandom>("Random"));
-    let block_type = Type::Opaque(env.register_opaque::<OpaqueBlock>("Block"));
-    let storage_type = Type::Opaque(env.register_opaque::<OpaqueStorage>("Storage"));
-    let read_only_storage_type = Type::Opaque(env.register_opaque::<OpaqueReadOnlyStorage>("ReadOnlyStorage"));
-    let memory_storage_type = Type::Opaque(env.register_opaque::<OpaqueMemoryStorage>("MemoryStorage"));
-    let asset_type = Type::Opaque(env.register_opaque::<Asset>("Asset"));
-    let signature_type = Type::Opaque(env.register_opaque::<Signature>("Signature"));
-
-    // Crypto
-    let ciphertext_type = Type::Opaque(env.register_opaque::<CiphertextCache>("Ciphertext"));
-    let _ = Type::Opaque(env.register_opaque::<CiphertextValidityProof>("CiphertextValidityProof"));
-    let _ = Type::Opaque(env.register_opaque::<RangeProofWrapper>("RangeProof"));
+    let tx_type = Type::Opaque(env.register_opaque::<OpaqueTransaction>("Transaction", false));
+    let hash_type = Type::Opaque(env.register_opaque::<Hash>("Hash", true));
+    let address_type = Type::Opaque(env.register_opaque::<Address>("Address", true));
+    let random_type = Type::Opaque(env.register_opaque::<OpaqueRandom>("Random", false));
+    let block_type = Type::Opaque(env.register_opaque::<OpaqueBlock>("Block", false));
+    let storage_type = Type::Opaque(env.register_opaque::<OpaqueStorage>("Storage", false));
+    let read_only_storage_type = Type::Opaque(env.register_opaque::<OpaqueReadOnlyStorage>("ReadOnlyStorage", false));
+    let memory_storage_type = Type::Opaque(env.register_opaque::<OpaqueMemoryStorage>("MemoryStorage", false));
+    let asset_type = Type::Opaque(env.register_opaque::<Asset>("Asset", false));
+    let signature_type = Type::Opaque(env.register_opaque::<Signature>("Signature", true));
+    let ciphertext_type = Type::Opaque(env.register_opaque::<CiphertextCache>("Ciphertext", true));
+    let _ = Type::Opaque(env.register_opaque::<CiphertextValidityProof>("CiphertextValidityProof", true));
+    let _ = Type::Opaque(env.register_opaque::<RangeProofWrapper>("RangeProof", true));
 
     // Transaction
     {
@@ -1168,7 +1166,7 @@ fn get_account_balance_of<P: ContractProvider>(_: FnInstance, mut params: FnPara
         .into_opaque_type()?;
 
     let balance = provider.get_account_balance_for_asset(address.get_public_key(), &asset, state.topoheight)?
-        .map(|(topoheight, ciphertext)| ValueCell::Array(vec![
+        .map(|(topoheight, ciphertext)| ValueCell::Object(vec![
             Primitive::U64(topoheight).into(),
             Primitive::Opaque(ciphertext.into()).into()
         ]))

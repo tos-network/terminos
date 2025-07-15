@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::HashMap};
 
 use async_trait::async_trait;
 use indexmap::IndexMap;
-use xelis_vm::{Environment, Module};
+use terminos_vm::{Environment, Module};
 use crate::{
     account::{Nonce, EnergyResource},
     block::{Block, BlockVersion},
