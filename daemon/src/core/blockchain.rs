@@ -556,7 +556,8 @@ impl<S: Storage> Blockchain<S> {
         } else {
             warn!("No genesis block found!");
             info!("Generating a new genesis block...");
-            let header = BlockHeader::new(BlockVersion::V0, 0, get_current_time_in_millis(), IndexSet::new(), [0u8; EXTRA_NONCE_SIZE], DEV_PUBLIC_KEY.clone(), IndexSet::new());
+            let version = get_version_at_height(&self.network, 0);
+            let header = BlockHeader::new(version, 0, get_current_time_in_millis(), IndexSet::new(), [0u8; EXTRA_NONCE_SIZE], DEV_PUBLIC_KEY.clone(), IndexSet::new());
             let block = Block::new(Immutable::Owned(header), Vec::new());
             let block_hash = block.hash();
             info!("Genesis generated: {} with {:?} {}", block.to_hex(), block_hash, block_hash);
