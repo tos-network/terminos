@@ -214,17 +214,17 @@ impl Transaction {
                         // For freeze operations, deduct the freeze amount from TOS balance
                         if *asset == TERMINOS_ASSET {
                             output += Scalar::from(*amount);
-                            let energy_gained = (*amount as f64 * duration.reward_multiplier()) as u64;
-                            println!("🔍 FreezeTos operation: deducting {} TOS from balance for asset {}", amount, asset);
-                            println!("  Duration: {:?}, Energy gained: {} units", duration, energy_gained);
+                            let _energy_gained = (*amount as f64 * duration.reward_multiplier()) as u64;
+                            // println!("🔍 FreezeTos operation: deducting {} TOS from balance for asset {}", amount, asset);
+                            // println!("  Duration: {:?}, Energy gained: {} units", duration, energy_gained);
                         }
                     },
-                    EnergyPayload::UnfreezeTos { amount } => {
+                    EnergyPayload::UnfreezeTos { amount: _ } => {
                         // For unfreeze operations, no TOS deduction (it's returned to balance)
                         // But we still need to account for the energy removal
                         // The amount is already handled in the energy system
-                        println!("🔍 UnfreezeTos operation: no TOS deduction for asset {} (amount: {})", asset, amount);
-                        println!("  Energy will be removed from energy resource during apply phase");
+                        // println!("🔍 UnfreezeTos operation: no TOS deduction for asset {} (amount: {})", asset, amount);
+                        // println!("  Energy will be removed from energy resource during apply phase");
                     }
                 }
             }
@@ -588,9 +588,10 @@ impl Transaction {
                 validator.verify()
                     .map_err(|err| VerificationError::ModuleError(format!("{:#}", err)))?;
             },
-            TransactionType::Energy(_) => {
+            TransactionType::Energy(payload) => {
                 // Energy operations are validated by the energy module
-                // No additional verification needed here
+                // No additional verification needed here for validation phase
+                debug!("Energy transaction validation - payload: {:?}", payload);
             }
         };
 
@@ -856,9 +857,14 @@ impl Transaction {
                 state.set_contract_module(tx_hash, &payload.module).await
                     .map_err(VerificationError::State)?;
             },
-            TransactionType::Energy(_) => {
-                // Energy operations are validated by the energy module
-                // No additional verification needed here
+            TransactionType::Energy(payload) => {
+                // Use unified transcript operation for energy transactions (FreezeTos/UnfreezeTos)
+                // This ensures consistency between generation and verification
+                // Note: Transfer transactions with energy fees are TransactionType::Transfers, not TransactionType::Energy
+                Transaction::append_energy_transcript(&mut transcript, payload);
+                
+                debug!("Energy transaction verification - payload: {:?}, fee: {}, nonce: {}", 
+                       payload, self.fee, self.nonce);
             }
         }
 
@@ -964,26 +970,26 @@ impl Transaction {
             trace!("Verifying range proof for transaction {}", tx_hash);
             
             // Add detailed debugging information for range proof verification
-            println!("🔍 Range proof verification details:");
-            println!("  Transaction type: {:?}", self.data);
-            println!("  Transaction hash: {}", tx_hash);
-            println!("  Fee: {}, Nonce: {}", self.fee, self.nonce);
-            println!("  Source commitments count: {}", self.source_commitments.len());
-            println!("  Total commitments count: {}", commitments.len());
-            println!("  Range proof size: {} bytes", self.range_proof.size());
-            println!("  Bulletproof size: {}", BULLET_PROOF_SIZE);
+            // println!("🔍 Range proof verification details:");
+            // println!("  Transaction type: {:?}", self.data);
+            // println!("  Transaction hash: {}", tx_hash);
+            // println!("  Fee: {}, Nonce: {}", self.fee, self.nonce);
+            // println!("  Source commitments count: {}", self.source_commitments.len());
+            // println!("  Total commitments count: {}", commitments.len());
+            // println!("  Range proof size: {} bytes", self.range_proof.size());
+            // println!("  Bulletproof size: {}", BULLET_PROOF_SIZE);
             
             // Print source commitment details
-            for (i, commitment) in self.source_commitments.iter().enumerate() {
-                println!("  Source commitment {}: asset={}, commitment={:?}", 
-                         i, commitment.get_asset(), commitment.get_commitment());
-            }
+            // for (i, commitment) in self.source_commitments.iter().enumerate() {
+            //     println!("  Source commitment {}: asset={}, commitment={:?}", 
+            //              i, commitment.get_asset(), commitment.get_commitment());
+            // }
             
             // Print all commitments for range proof verification
-            println!("  Commitments for range proof verification:");
-            for (i, (new_commitment, old_commitment)) in commitments.iter().enumerate() {
-                println!("    Commitment {}: new={:?}, old={:?}", i, new_commitment, old_commitment);
-            }
+            // println!("  Commitments for range proof verification:");
+            // for (i, (new_commitment, old_commitment)) in commitments.iter().enumerate() {
+            //     println!("    Commitment {}: new={:?}, old={:?}", i, new_commitment, old_commitment);
+            // }
             
             debug!("Range proof verification details:");
             debug!("  Transaction type: {:?}", self.data);
@@ -993,7 +999,7 @@ impl Transaction {
             debug!("  Bulletproof size: {}", BULLET_PROOF_SIZE);
             
             // Verify range proof with detailed error information
-            println!("🔍 Starting range proof verification...");
+            // println!("🔍 Starting range proof verification...");
             match RangeProof::verify_multiple(
                 &self.range_proof,
                 &BP_GENS,
@@ -1003,29 +1009,29 @@ impl Transaction {
                 BULLET_PROOF_SIZE,
             ) {
                 Ok(()) => {
-                    println!("✅ Range proof verification successful for transaction {}", tx_hash);
+                    // println!("✅ Range proof verification successful for transaction {}", tx_hash);
                     debug!("Range proof verification successful for transaction {}", tx_hash);
                 },
                 Err(e) => {
-                    println!("❌ Range proof verification failed for transaction {}: {:?}", tx_hash, e);
-                    println!("❌ Transaction details: fee={}, nonce={}, data={:?}", 
-                             self.fee, self.nonce, self.data);
-                    println!("❌ Source commitments count: {}", self.source_commitments.len());
-                    println!("❌ Total commitments count: {}", commitments.len());
-                    println!("❌ Range proof size: {} bytes", self.range_proof.size());
-                    println!("❌ Bulletproof size: {}", BULLET_PROOF_SIZE);
+                    // println!("❌ Range proof verification failed for transaction {}: {:?}", tx_hash, e);
+                    // println!("❌ Transaction details: fee={}, nonce={}, data={:?}", 
+                    //          self.fee, self.nonce, self.data);
+                    // println!("❌ Source commitments count: {}", self.source_commitments.len());
+                    // println!("❌ Total commitments count: {}", commitments.len());
+                    // println!("❌ Range proof size: {} bytes", self.range_proof.size());
+                    // println!("❌ Bulletproof size: {}", BULLET_PROOF_SIZE);
                     
                     // Print detailed commitment information for debugging
-                    println!("❌ Detailed commitment information:");
-                    for (i, (new_commitment, old_commitment)) in commitments.iter().enumerate() {
-                        println!("    Commitment {}: new={:?}, old={:?}", i, new_commitment, old_commitment);
-                    }
+                    // println!("❌ Detailed commitment information:");
+                    // for (i, (new_commitment, old_commitment)) in commitments.iter().enumerate() {
+                    //     println!("    Commitment {}: new={:?}, old={:?}", i, new_commitment, old_commitment);
+                    // }
                     
                     // Print transcript state information
-                    println!("❌ Transcript state before range proof verification:");
-                    let mut challenge = [0u8; 32];
-                    transcript.challenge_bytes(b"debug_challenge", &mut challenge);
-                    println!("    Transcript challenge: {:?}", challenge);
+                    // println!("❌ Transcript state before range proof verification:");
+                    // let mut challenge = [0u8; 32];
+                    // transcript.challenge_bytes(b"debug_challenge", &mut challenge);
+                    // println!("    Transcript challenge: {:?}", challenge);
                     
                     error!("Range proof verification failed for transaction {}: {:?}", tx_hash, e);
                     error!("Transaction details: fee={}, nonce={}, data={:?}", 

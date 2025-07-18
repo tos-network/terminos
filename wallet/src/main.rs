@@ -1248,6 +1248,9 @@ async fn transfer(manager: &CommandManager, mut args: ArgumentManager) -> Result
                 (threshold, version)
             };
             let mut state = EstimateFeesState::new();
+            // Add registered keys for proper new_addresses calculation
+            wallet.add_registered_keys_for_fees_estimation(&mut state, &FeeBuilder::default(), &tx_type).await
+                .map_err(|e| CommandError::Any(e.into()))?;
             let builder = TransactionBuilder::new(version, wallet.get_public_key().clone(), threshold, tx_type.clone(), FeeBuilder::default());
             let energy_cost = builder.estimate_fees(&mut state)
                 .map_err(|e| CommandError::Any(e.into()))?;
@@ -1400,6 +1403,9 @@ async fn transfer_all(manager: &CommandManager, mut args: ArgumentManager) -> Re
                 (threshold, version)
             };
             let mut state = EstimateFeesState::new();
+            // Add registered keys for proper new_addresses calculation
+            wallet.add_registered_keys_for_fees_estimation(&mut state, &FeeBuilder::default(), &tx_type).await
+                .map_err(|e| CommandError::Any(e.into()))?;
             let builder = TransactionBuilder::new(version, wallet.get_public_key().clone(), threshold, tx_type.clone(), FeeBuilder::default());
             let energy_cost = builder.estimate_fees(&mut state)
                 .map_err(|e| CommandError::Any(e.into()))?;
