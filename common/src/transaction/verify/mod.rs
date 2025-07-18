@@ -58,6 +58,7 @@ use crate::{
 };
 use super::{
     ContractDeposit,
+    FeeType,
     Role,
     Transaction,
     TransactionType,
@@ -277,12 +278,17 @@ impl Transaction {
         version: TxVersion,
         source_pubkey: &CompressedPublicKey,
         fee: u64,
+        fee_type: FeeType,
         nonce: Nonce,
     ) -> Transcript {
         let mut transcript = Transcript::new(b"transaction-proof");
         transcript.append_u64(b"version", version.into());
         transcript.append_public_key(b"source_pubkey", source_pubkey);
         transcript.append_u64(b"fee", fee);
+        transcript.append_u64(b"fee_type", match fee_type {
+            FeeType::TOS => 0,
+            FeeType::Energy => 1,
+        });
         transcript.append_u64(b"nonce", nonce);
         transcript
     }
@@ -600,7 +606,7 @@ impl Transaction {
             .decompress()
             .map_err(|err| VerificationError::Proof(err.into()))?;
 
-        let mut transcript = Self::prepare_transcript(self.version, &self.source, self.fee, self.nonce);
+        let mut transcript = Self::prepare_transcript(self.version, &self.source, self.fee, self.fee_type.clone(), self.nonce);
 
         // 0.a Verify Signature
         let bytes = self.to_bytes();
@@ -783,42 +789,7 @@ impl Transaction {
                     value_commitments.push((decompressed.commitment.as_point().clone(), transfer.get_commitment().as_point().clone()));
                 }
                 
-                // Add Energy fee transcript operations for transfer transactions using Energy fees
-                // This ensures consistency between build and verification phases
-                if self.uses_energy_for_fees() {
-                    // Use the same calculation method as build phase
-                    // For verification, we need to estimate the size based on the actual transaction
-                    let tx_size = self.size();
-                    
-                    // For verification, we need to use the same new_addresses calculation as build phase
-                    // Since we don't have access to account registration status in verification,
-                    // we assume the destination account doesn't exist (new_addresses = 1) to match build phase
-                    let new_addresses = 1; // Assume destination account doesn't exist
-                    
-                    let energy_cost = calculate_energy_fee(
-                        tx_size,
-                        transfers.len(),
-                        new_addresses
-                    );
-                    
-                    println!("🔍 Transfer with Energy fees transcript operation (verification phase):");
-                    println!("  Energy cost: {} units", energy_cost);
-                    println!("  Fee: {}, Nonce: {}", self.fee, self.nonce);
-                    println!("  Transaction size: {} bytes, Transfer count: {}", tx_size, transfers.len());
-                    
-                    transcript.append_u64(b"transfer_energy_fee", energy_cost);
-                    transcript.append_u64(b"transfer_uses_energy", 1);
-                    
-                    println!("  Transfer Energy fee transcript operation completed (verification phase)");
-                    debug!("Transfer with Energy fees (verification) - energy_cost: {}, fee: {}, nonce: {}", 
-                           energy_cost, self.fee, self.nonce);
-                } else {
-                    // For TOS fees, add TOS fee information to transcript
-                    transcript.append_u64(b"transfer_tos_fee", self.fee);
-                    transcript.append_u64(b"transfer_uses_energy", 0);
-                    
-                    debug!("Transfer with TOS fees (verification) - fee: {}, nonce: {}", self.fee, self.nonce);
-                }
+
             },
             TransactionType::Burn(payload) => {
                 if self.get_version() >= TxVersion::V0 {
@@ -1082,13 +1053,19 @@ impl Transaction {
     /// Calculate energy cost for this transaction
     /// Energy can only be used for Transfer transactions, so this method focuses on transfer-specific costs
     pub fn calculate_energy_cost(&self) -> u64 {
-        // Energy can only be used for Transfer transactions
-        // Calculate energy cost based on transfer-specific parameters
-        calculate_energy_fee(
-            self.size(),
-            self.get_outputs_count(),
-            0 // new_addresses will be calculated during verification
-        )
+        // For energy fee transactions, the fee field contains the energy cost
+        // This ensures consistency between build and verification phases
+        if self.uses_energy_for_fees() {
+            self.fee
+        } else {
+            // For non-energy transactions, calculate based on parameters
+            // This is only used for informational purposes
+            calculate_energy_fee(
+                self.size(),
+                self.get_outputs_count(),
+                0 // new_addresses not available in verification context
+            )
+        }
     }
 
     /// Check if this transaction uses energy for fees
@@ -1415,7 +1392,7 @@ impl Transaction {
             .decompress()
             .map_err(|err| VerificationError::Proof(err.into()))?;
 
-        let mut transcript = Self::prepare_transcript(self.version, &self.source, self.fee, self.nonce);
+        let mut transcript = Self::prepare_transcript(self.version, &self.source, self.fee, self.fee_type.clone(), self.nonce);
 
         trace!("verifying commitments eq proofs");
 

@@ -15,7 +15,8 @@ use crate::{
         Hash,
         Hashable,
         KeyPair,
-        PublicKey
+        PublicKey,
+        SIGNATURE_SIZE
     },
     serializer::Serializer,
     transaction::{
@@ -1355,4 +1356,320 @@ async fn test_tos_transfer_with_tos_fees_balance_verification() {
     println!("Alice final Energy balance: 1000 (unchanged)");
     println!("Bob final TOS balance: 2 TOS (1 + 1 transfer)");
     println!("Bob final Energy balance: 2000 (unchanged)");
+}
+
+#[tokio::test]
+async fn test_tos_transfer_with_energy_fees_balance_verification() {
+    let mut alice = Account::new();
+    let mut bob = Account::new();
+    
+    // Create a dummy Energy asset hash
+    let energy_asset = Hash::from_bytes(&[1u8; 32]).unwrap();
+    
+    // Set initial balances
+    // Alice: 10 TOS, 1000 Energy
+    alice.set_balance(TERMINOS_ASSET, 10 * COIN_VALUE);
+    alice.set_balance(energy_asset.clone(), 1000); // Energy asset (using a dummy hash)
+    
+    // Bob: 1 TOS, 2000 Energy
+    bob.set_balance(TERMINOS_ASSET, 1 * COIN_VALUE);
+    bob.set_balance(energy_asset.clone(), 2000); // Energy asset
+    
+    // Verify initial balances
+    assert_eq!(alice.balances[&TERMINOS_ASSET].balance, 10 * COIN_VALUE);
+    assert_eq!(alice.balances[&energy_asset].balance, 1000);
+    assert_eq!(bob.balances[&TERMINOS_ASSET].balance, 1 * COIN_VALUE);
+    assert_eq!(bob.balances[&energy_asset].balance, 2000);
+    
+    // Create transfer transaction: Alice sends 1 TOS to Bob with Energy fees
+    let mut state = AccountStateImpl {
+        balances: alice.balances.clone(),
+        nonce: alice.nonce,
+        reference: Reference {
+            topoheight: 0,
+            hash: Hash::zero(),
+        },
+    };
+    
+    let data = TransactionTypeBuilder::Transfers(vec![TransferBuilder {
+        amount: 1 * COIN_VALUE, // 1 TOS
+        destination: bob.address(),
+        asset: TERMINOS_ASSET,
+        extra_data: None,
+        encrypt_extra_data: true,
+    }]);
+    
+    let builder = TransactionBuilder::new(
+        TxVersion::V0, 
+        alice.keypair.get_public_key().compress(), 
+        None, 
+        data, 
+        FeeBuilder::default()
+    ).with_fee_type(FeeType::Energy);
+    
+    let tx = builder.build(&mut state, &alice.keypair).unwrap();
+    
+    // Verify transaction properties
+    assert!(tx.uses_energy_fees());
+    assert_eq!(tx.get_fee_type(), &FeeType::Energy);
+    // In energy fee mode, the fee field contains the energy cost
+    assert!(tx.get_fee() > 0); // Energy cost should be calculated
+    
+    println!("✅ Transfer transaction with Energy fees built successfully");
+    println!("  Transaction hash: {}", tx.hash());
+    println!("  Fee type: {:?}", tx.get_fee_type());
+    println!("  Fee amount: {} TOS", tx.get_fee());
+    println!("  Energy cost: {} units", tx.calculate_energy_cost());
+    
+    // Verify transaction format
+    assert!(tx.has_valid_version_format());
+    println!("✅ Transaction format validation passed");
+    
+    // Verify source commitment structure
+    assert_eq!(tx.source_commitments.len(), 1);
+    let tos_commitment = tx.source_commitments.iter()
+        .find(|c| c.get_asset() == &TERMINOS_ASSET)
+        .expect("TOS source commitment not found");
+    println!("✅ TOS source commitment found");
+    
+    // Test transaction hash consistency
+    let hash1 = tx.hash();
+    println!("✅ Transaction hash: {}", hash1);
+    
+    // Test signature verification
+    let bytes = tx.to_bytes();
+    let source_decompressed = tx.source.decompress().unwrap();
+    assert!(tx.signature.verify(&bytes[..bytes.len() - SIGNATURE_SIZE], &source_decompressed));
+    println!("✅ Transaction signature verification passed");
+    
+    // Test energy payload validation
+    match tx.get_data() {
+        TransactionType::Transfers(transfers) => {
+            println!("✅ Energy payload validation passed - found {} transfers", transfers.len());
+            assert_eq!(transfers.len(), 1);
+        },
+        _ => panic!("Expected Transfer transaction type")
+    }
+    
+    // Test fee type validation
+    assert_eq!(tx.get_fee_type(), &FeeType::Energy);
+    println!("✅ Fee type validation passed");
+    
+    // Test transaction size
+    let tx_size = tx.size();
+    assert!(tx_size > 0);
+    println!("✅ Transaction size: {} bytes", tx_size);
+    
+    // Test transaction properties
+    println!("✅ Transaction fee type: {:?}", tx.get_fee_type());
+    println!("✅ Transaction fee: {}", tx.get_fee());
+    
+    // Test verification with chain state
+    let mut chain_state = ChainState::new();
+    // Convert Account balances to AccountChainState format
+    let mut alice_balances = HashMap::new();
+    for (asset, balance) in &alice.balances {
+        alice_balances.insert(asset.clone(), balance.ciphertext.clone().take_ciphertext().unwrap());
+    }
+    chain_state.accounts.insert(
+        alice.keypair.get_public_key().compress(),
+        AccountChainState {
+            balances: alice_balances,
+            nonce: alice.nonce,
+        }
+    );
+    
+    let mut bob_balances = HashMap::new();
+    for (asset, balance) in &bob.balances {
+        bob_balances.insert(asset.clone(), balance.ciphertext.clone().take_ciphertext().unwrap());
+    }
+    chain_state.accounts.insert(
+        bob.keypair.get_public_key().compress(),
+        AccountChainState {
+            balances: bob_balances,
+            nonce: bob.nonce,
+        }
+    );
+    
+    // Verify the transaction
+    let verification_result = tx.verify(&tx.hash(), &mut chain_state).await;
+    match verification_result {
+        Ok(()) => {
+            println!("✅ Transfer transaction with Energy fees verification successful!");
+            println!("  This confirms that Sigma proofs verification works correctly");
+            println!("  for transfer transactions using energy fees");
+        },
+        Err(e) => {
+            println!("❌ Transfer transaction verification failed: {:?}", e);
+            panic!("Transfer transaction with Energy fees verification failed: {:?}", e);
+        }
+    }
+    
+    // Verify final balances after successful verification
+    let alice_tos_balance = alice.keypair.decrypt_to_point(&chain_state.accounts[&alice.keypair.get_public_key().compress()].balances[&TERMINOS_ASSET]);
+    let expected_alice_tos = Scalar::from(9u64 * COIN_VALUE) * PC_GENS.B; // 10 - 1 transfer (no TOS fee with energy)
+    assert_eq!(alice_tos_balance, expected_alice_tos);
+    
+    let bob_tos_balance = bob.keypair.decrypt_to_point(&chain_state.accounts[&bob.keypair.get_public_key().compress()].balances[&TERMINOS_ASSET]);
+    let expected_bob_tos = Scalar::from(2u64 * COIN_VALUE) * PC_GENS.B; // 1 + 1 transfer
+    assert_eq!(bob_tos_balance, expected_bob_tos);
+    
+    // Bob's Energy should remain unchanged: 2000
+    let bob_energy_balance = bob.keypair.decrypt_to_point(&chain_state.accounts[&bob.keypair.get_public_key().compress()].balances[&energy_asset]);
+    let expected_bob_energy = Scalar::from(2000u64) * PC_GENS.B;
+    assert_eq!(bob_energy_balance, expected_bob_energy);
+    
+    println!("Transfer verification successful!");
+    println!("Alice final TOS balance: 9 TOS (10 - 1 transfer, no TOS fee with energy)");
+    println!("Alice final Energy balance: 1000 (energy consumed for fee)");
+    println!("Bob final TOS balance: 2 TOS (1 + 1 transfer)");
+    println!("Bob final Energy balance: 2000 (unchanged)");
+}
+
+#[tokio::test]
+async fn test_transfer_with_energy_fees() {
+    use crate::transaction::{FeeType, builder::{TransactionBuilder, TransactionTypeBuilder, TransferBuilder, FeeBuilder}};
+    use crate::config::TERMINOS_ASSET;
+
+    use std::collections::HashMap;
+    use curve25519_dalek::Scalar;
+    use crate::config::COIN_VALUE;
+    use crate::crypto::proofs::PC_GENS;
+
+    println!("🧪 Testing transfer transaction with energy fees...");
+
+    // Create test accounts
+    let mut alice = Account::new();
+    let mut bob = Account::new();
+
+    // Create a dummy Energy asset hash
+    let energy_asset = Hash::from_bytes(&[1u8; 32]).unwrap();
+
+    // Set initial balances
+    // Alice: 10 TOS, 1000 Energy
+    alice.set_balance(TERMINOS_ASSET.clone(), 10 * COIN_VALUE);
+    alice.set_balance(energy_asset.clone(), 1000); // Energy asset (using a dummy hash)
+    
+    // Bob: 1 TOS, 2000 Energy
+    bob.set_balance(TERMINOS_ASSET.clone(), 1 * COIN_VALUE);
+    bob.set_balance(energy_asset.clone(), 2000); // Energy asset
+
+    // Verify initial balances
+    assert_eq!(alice.balances[&TERMINOS_ASSET].balance, 10 * COIN_VALUE);
+    assert_eq!(alice.balances[&energy_asset].balance, 1000);
+    assert_eq!(bob.balances[&TERMINOS_ASSET].balance, 1 * COIN_VALUE);
+    assert_eq!(bob.balances[&energy_asset].balance, 2000);
+
+    // Create a transfer transaction with energy fees
+    let transfer = TransferBuilder {
+        destination: bob.address(),
+        amount: 1 * COIN_VALUE,
+        asset: TERMINOS_ASSET.clone(),
+        extra_data: None,
+        encrypt_extra_data: true
+    };
+
+    let tx_type = TransactionTypeBuilder::Transfers(vec![transfer]);
+    
+    // Create transaction builder with energy fees
+    let mut state = AccountStateImpl {
+        balances: alice.balances.clone(),
+        nonce: alice.nonce,
+        reference: Reference {
+            topoheight: 0,
+            hash: Hash::zero(),
+        },
+    };
+    let builder = TransactionBuilder::new(
+        crate::transaction::TxVersion::V0,
+        alice.keypair.get_public_key().compress(),
+        None,
+        tx_type,
+        FeeBuilder::Value(0) // Energy fees have fee = 0
+    ).with_fee_type(FeeType::Energy);
+
+    // Build the transaction
+    let tx = match builder.build(&mut state, &alice.keypair) {
+        Ok(tx) => {
+            println!("✅ Transaction built successfully");
+            tx
+        },
+        Err(e) => {
+            println!("❌ Failed to build transaction: {:?}", e);
+            panic!("Transaction build failed: {:?}", e);
+        }
+    };
+
+    // Verify the transaction has the correct fee type
+    assert_eq!(tx.get_fee_type(), &FeeType::Energy);
+    assert_eq!(tx.get_fee(), 0);
+    println!("✅ Fee type and amount verified");
+
+    // Verify the transaction uses energy for fees
+    assert!(tx.uses_energy_for_fees());
+    println!("✅ Energy fee usage verified");
+
+    // Test verification with chain state
+    let mut chain_state = ChainState::new();
+    // Convert Account balances to AccountChainState format
+    let mut alice_balances = HashMap::new();
+    for (asset, balance) in &alice.balances {
+        alice_balances.insert(asset.clone(), balance.ciphertext.clone().take_ciphertext().unwrap());
+    }
+    chain_state.accounts.insert(
+        alice.keypair.get_public_key().compress(),
+        AccountChainState {
+            balances: alice_balances,
+            nonce: alice.nonce,
+        }
+    );
+    
+    let mut bob_balances = HashMap::new();
+    for (asset, balance) in &bob.balances {
+        bob_balances.insert(asset.clone(), balance.ciphertext.clone().take_ciphertext().unwrap());
+    }
+    chain_state.accounts.insert(
+        bob.keypair.get_public_key().compress(),
+        AccountChainState {
+            balances: bob_balances,
+            nonce: bob.nonce,
+        }
+    );
+    
+    // Verify the transaction
+    let verification_result = tx.verify(&tx.hash(), &mut chain_state).await;
+    match verification_result {
+        Ok(()) => {
+            println!("✅ Transfer transaction with Energy fees verification successful!");
+            println!("  This confirms that Sigma proofs verification works correctly");
+            println!("  for transfer transactions using energy fees");
+        },
+        Err(e) => {
+            println!("❌ Transfer transaction verification failed: {:?}", e);
+            panic!("Transfer transaction with Energy fees verification failed: {:?}", e);
+        }
+    }
+    
+    // Verify final balances after successful verification
+    let alice_tos_balance = alice.keypair.decrypt_to_point(&chain_state.accounts[&alice.keypair.get_public_key().compress()].balances[&TERMINOS_ASSET]);
+    let expected_alice_tos = Scalar::from(9u64 * COIN_VALUE) * PC_GENS.B; // 10 - 1 transfer (no TOS fee with energy)
+    assert_eq!(alice_tos_balance, expected_alice_tos);
+    
+    let bob_tos_balance = bob.keypair.decrypt_to_point(&chain_state.accounts[&bob.keypair.get_public_key().compress()].balances[&TERMINOS_ASSET]);
+    let expected_bob_tos = Scalar::from(2u64 * COIN_VALUE) * PC_GENS.B; // 1 + 1 transfer
+    assert_eq!(bob_tos_balance, expected_bob_tos);
+    
+    // Bob's Energy should remain unchanged: 2000
+    let bob_energy_balance = bob.keypair.decrypt_to_point(&chain_state.accounts[&bob.keypair.get_public_key().compress()].balances[&energy_asset]);
+    let expected_bob_energy = Scalar::from(2000u64) * PC_GENS.B;
+    assert_eq!(bob_energy_balance, expected_bob_energy);
+    
+    println!("✅ Final balances verified correctly");
+    println!("Transfer verification successful!");
+    println!("Alice final TOS balance: 9 TOS (10 - 1 transfer, no TOS fee with energy)");
+    println!("Alice final Energy balance: 1000 (energy consumed for fee)");
+    println!("Bob final TOS balance: 2 TOS (1 + 1 transfer)");
+    println!("Bob final Energy balance: 2000 (unchanged)");
+    
+    println!("🎉 All tests passed! Transfer with energy fees works correctly.");
 }

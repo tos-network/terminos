@@ -26,6 +26,7 @@ use crate::{
     crypto::{
         elgamal::{
             Ciphertext,
+            CompressedHandle,
             CompressedPublicKey,
             DecryptHandle,
             KeyPair,
@@ -486,11 +487,22 @@ impl TransactionBuilder {
         deposits: &HashMap<Hash, DepositWithCommitment>,
     ) -> Ciphertext {
         if asset == &TERMINOS_ASSET {
-            // For transfer transactions with energy fees (fee = 0), no TOS deduction needed
-            // For all other transactions, apply TOS fees
-            if !(fee == 0 && matches!(self.data, TransactionTypeBuilder::Transfers(_))) {
+            // Determine if this is an energy fee transaction
+            let use_energy_for_fees = if let Some(ref fee_type) = self.fee_type {
+                *fee_type == FeeType::Energy && matches!(self.data, TransactionTypeBuilder::Transfers(_))
+            } else {
+                false
+            };
+
+            if use_energy_for_fees {
+                // Use energy for transfer fees - no TOS deduction needed
+                // Energy consumption will be handled separately in the apply function
+                debug!("Using energy for transfer fees: {} energy", fee);
+            } else {
+                // Use TOS payment for fees (for all transaction types except energy-enabled transfers)
                 // Fees are applied to the native blockchain asset only.
                 ct -= Scalar::from(fee);
+                debug!("Using TOS for transaction fees: {} TOS", fee);
             }
             
             // For energy transactions, also deduct the freeze/unfreeze amount
@@ -574,10 +586,20 @@ impl TransactionBuilder {
         let mut cost = 0;
 
         if *asset == TERMINOS_ASSET {
-            // For transfer transactions with energy fees (fee = 0), no TOS cost for fees
-            // For all other transactions, include TOS fees in cost
-            if !(fee == 0 && matches!(self.data, TransactionTypeBuilder::Transfers(_))) {
+            // Determine if this is an energy fee transaction
+            let use_energy_for_fees = if let Some(ref fee_type) = self.fee_type {
+                *fee_type == FeeType::Energy && matches!(self.data, TransactionTypeBuilder::Transfers(_))
+            } else {
+                false
+            };
+
+            if use_energy_for_fees {
+                // Use energy for transfer fees - no TOS cost for fees
+                debug!("Using energy for transfer fees: {} energy", fee);
+            } else {
+                // Use TOS payment for fees (for all transaction types except energy-enabled transfers)
                 cost += fee;
+                debug!("Using TOS for transaction fees: {} TOS", fee);
             }
         }
 
@@ -888,8 +910,16 @@ impl TransactionBuilder {
             })
             .collect::<Result<Vec<_>, GenerationError<B::Error>>>()?;
 
+        // Determine fee type: use explicit fee_type if set, otherwise use default logic
+        let fee_type = if let Some(ref explicit_fee_type) = self.fee_type {
+            explicit_fee_type.clone()
+        } else {
+            // Default logic: use TOS for all transactions
+            FeeType::TOS
+        };
+
         // Prepare the transcript used for proofs
-        let mut transcript = Transaction::prepare_transcript(self.version, &self.source, fee, nonce);
+        let mut transcript = Transaction::prepare_transcript(self.version, &self.source, fee, fee_type.clone(), nonce);
 
         let source_commitments = used_assets
             .into_iter()
@@ -1075,54 +1105,8 @@ impl TransactionBuilder {
         range_proof_values.extend(iter::repeat(0u64).take(n_dud_commitments));
         range_proof_openings.extend(iter::repeat(Scalar::ZERO).take(n_dud_commitments));
 
-        let data = match self.data {
+        let data = match &self.data {
             TransactionTypeBuilder::Transfers(_) => {
-                // Add Energy fee transcript operations for transfer transactions using Energy fees
-                // This ensures consistency between build and verification phases
-                if let Some(fee_type) = &self.fee_type {
-                    if fee_type == &FeeType::Energy {
-                        // Use the same calculation method as verification phase
-                        // Calculate energy cost based on transaction size and transfer count
-                        // Calculate new_addresses the same way as in fee estimation
-                        let mut new_addresses = 0;
-                        for transfer in &transfers {
-                            if !state.account_exists(transfer.get_destination()).map_err(GenerationError::State)? {
-                                new_addresses += 1;
-                            }
-                        }
-                        
-                        let energy_cost = calculate_energy_fee(
-                            self.estimate_size(),
-                            transfers.len(),
-                            new_addresses
-                        );
-                        
-                        println!("🔍 Transfer with Energy fees transcript operation (build phase):");
-                        println!("  Energy cost: {} units", energy_cost);
-                        println!("  Fee: {}, Nonce: {}", fee, nonce);
-                        println!("  Transaction size: {} bytes, Transfer count: {}", self.estimate_size(), transfers.len());
-                        
-                        transcript.append_u64(b"transfer_energy_fee", energy_cost);
-                        transcript.append_u64(b"transfer_uses_energy", 1);
-                        
-                        println!("  Transfer Energy fee transcript operation completed (build phase)");
-                        debug!("Transfer with Energy fees (build) - energy_cost: {}, fee: {}, nonce: {}", 
-                               energy_cost, fee, nonce);
-                    } else {
-                        // For TOS fees, add TOS fee information to transcript
-                        transcript.append_u64(b"transfer_tos_fee", fee);
-                        transcript.append_u64(b"transfer_uses_energy", 0);
-                        
-                        debug!("Transfer with TOS fees (build) - fee: {}, nonce: {}", fee, nonce);
-                    }
-                } else {
-                    // Default to TOS fees if fee_type is not specified
-                    transcript.append_u64(b"transfer_tos_fee", fee);
-                    transcript.append_u64(b"transfer_uses_energy", 0);
-                    
-                    debug!("Transfer with default TOS fees (build) - fee: {}, nonce: {}", fee, nonce);
-                }
-                
                 TransactionType::Transfers(transfers)
             },
             TransactionTypeBuilder::Burn(payload) => {
@@ -1138,7 +1122,7 @@ impl TransactionBuilder {
                     transcript.append_u64(b"burn_amount", payload.amount);
                 }
 
-                TransactionType::Burn(payload)
+                TransactionType::Burn(payload.clone())
             },
             TransactionTypeBuilder::MultiSig(payload) => {
                 if payload.participants.len() > MAX_MULTISIG_PARTICIPANTS {
@@ -1153,8 +1137,8 @@ impl TransactionBuilder {
                 transcript.append_u64(b"multisig_threshold", payload.threshold as u64);
 
                 let mut keys = IndexSet::new();
-                for addr in payload.participants {
-                    let key = addr.to_public_key();
+                for addr in &payload.participants {
+                    let key = addr.clone().to_public_key();
                     transcript.append_public_key(b"multisig_participant", &key);
                     keys.insert(key);
                 }
@@ -1179,10 +1163,10 @@ impl TransactionBuilder {
                 }
 
                 TransactionType::InvokeContract(InvokeContractPayload {
-                    contract: payload.contract,
+                    contract: payload.contract.clone(),
                     max_gas: payload.max_gas,
                     chunk_id: payload.chunk_id,
-                    parameters: payload.parameters,
+                    parameters: payload.parameters.clone(),
                     deposits,
                 })
             },
@@ -1198,7 +1182,7 @@ impl TransactionBuilder {
 
                 TransactionType::DeployContract(DeployContractPayload {
                     module,
-                    invoke: payload.invoke.map(|invoke| {
+                    invoke: payload.invoke.as_ref().map(|invoke| {
                         transcript.invoke_constructor_proof_domain_separator();
                         transcript.append_u64(b"max_gas", invoke.max_gas);
 
@@ -1257,14 +1241,6 @@ impl TransactionBuilder {
             BULLET_PROOF_SIZE,
         )
         .map_err(ProofGenerationError::from)?;
-
-        // Determine fee type: use explicit fee_type if set, otherwise use default logic
-        let fee_type = if let Some(explicit_fee_type) = self.fee_type {
-            explicit_fee_type
-        } else {
-            // Default logic: use TOS for all transactions
-            FeeType::TOS
-        };
 
         // Validate that energy fees are only used for Transfer transactions
         if fee_type == FeeType::Energy && !is_transfer {
