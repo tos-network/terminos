@@ -49,7 +49,7 @@ use terminos_common::{
     serializer::Serializer,
     tokio,
     transaction::{
-        builder::{FeeBuilder, MultiSigBuilder, TransactionTypeBuilder, TransferBuilder, EnergyBuilder},
+        builder::{FeeBuilder, MultiSigBuilder, TransactionTypeBuilder, TransferBuilder, EnergyBuilder, TransactionBuilder},
         multisig::{MultiSig, SignatureId},
         BurnPayload,
         MultiSigPayload,
@@ -68,7 +68,8 @@ use terminos_wallet::{
     wallet::{
         RecoverOption,
         Wallet
-    }
+    },
+    transaction_builder::EstimateFeesState
 };
 
 #[cfg(feature = "network_handler")]
@@ -549,6 +550,7 @@ async fn setup_wallet_command_manager(wallet: Arc<Wallet>, command_manager: &Com
             Arg::new("asset", ArgType::Hash),
             Arg::new("address", ArgType::String),
             Arg::new("amount", ArgType::String),
+            Arg::new("fee_type", ArgType::String),
             Arg::new("confirm", ArgType::Bool)
         ],
         CommandHandler::Async(async_handler!(transfer))
@@ -559,6 +561,7 @@ async fn setup_wallet_command_manager(wallet: Arc<Wallet>, command_manager: &Com
         vec![
             Arg::new("asset", ArgType::Hash),
             Arg::new("address", ArgType::String),
+            Arg::new("fee_type", ArgType::String),
             Arg::new("confirm", ArgType::Bool)
         ],
         CommandHandler::Async(async_handler!(transfer_all))
@@ -591,7 +594,7 @@ async fn setup_wallet_command_manager(wallet: Arc<Wallet>, command_manager: &Com
     ))?;
     command_manager.add_command(Command::with_optional_arguments(
         "freeze_tos",
-        "Freeze TOS to get energy for free transfers with duration-based rewards",
+        "Freeze TOS to get energy for free transfers",
         vec![
             Arg::new("amount", ArgType::String),
             Arg::new("duration", ArgType::String),
@@ -601,13 +604,14 @@ async fn setup_wallet_command_manager(wallet: Arc<Wallet>, command_manager: &Com
     ))?;
     command_manager.add_command(Command::with_optional_arguments(
         "unfreeze_tos",
-        "Unfreeze TOS from energy (release frozen TOS)",
+        "Unfreeze TOS from energy",
         vec![
             Arg::new("amount", ArgType::String),
             Arg::new("confirm", ArgType::Bool)
         ],
         CommandHandler::Async(async_handler!(unfreeze_tos))
     ))?;
+
     command_manager.add_command(Command::with_optional_arguments(
         "history",
         "Show all your transactions",
@@ -1182,7 +1186,41 @@ async fn transfer(manager: &CommandManager, mut args: ArgumentManager) -> Result
     };
 
     let amount = from_coin(amount, asset_data.get_decimals()).context("Invalid amount")?;
-    manager.message(format!("Sending {} of {} ({}) to {}", format_coin(amount, asset_data.get_decimals()), asset_data.get_name(), asset, address.to_string()));
+    
+    // Read fee_type parameter
+    let fee_type = if args.has_argument("fee_type") {
+        let fee_type_str = args.get_value("fee_type")?.to_string_value()?;
+        match fee_type_str.to_lowercase().as_str() {
+            "tos" => Some(terminos_common::transaction::FeeType::TOS),
+            "energy" => Some(terminos_common::transaction::FeeType::Energy),
+            _ => {
+                manager.error("Invalid fee_type. Please use 'tos' or 'energy'");
+                return Ok(())
+            }
+        }
+    } else {
+        // Interactive prompt for fee_type
+        let fee_type_str = prompt.read_input(
+            prompt.colorize_string(Color::Green, "Fee type (tos/energy, default: tos): "),
+            false
+        ).await.context("Error while reading fee type")?;
+        
+        match fee_type_str.to_lowercase().as_str() {
+            "" | "tos" => Some(terminos_common::transaction::FeeType::TOS),
+            "energy" => Some(terminos_common::transaction::FeeType::Energy),
+            _ => {
+                manager.error("Invalid fee_type. Please use 'tos' or 'energy'");
+                return Ok(())
+            }
+        }
+    };
+    
+    let fee_type_display = fee_type.as_ref().map(|ft| match ft {
+        terminos_common::transaction::FeeType::TOS => "TOS",
+        terminos_common::transaction::FeeType::Energy => "Energy",
+    }).unwrap_or("Default");
+    
+    manager.message(format!("Sending {} of {} ({}) to {} (fee_type: {})", format_coin(amount, asset_data.get_decimals()), asset_data.get_name(), asset, address.to_string(), fee_type_display));
 
     if !args.get_flag("confirm")? && !prompt.ask_confirmation().await.context("Error while confirming action")? {
         manager.message("Transaction has been aborted");
@@ -1198,18 +1236,82 @@ async fn transfer(manager: &CommandManager, mut args: ArgumentManager) -> Result
         encrypt_extra_data: true
     };
     let tx_type = TransactionTypeBuilder::Transfers(vec![transfer]);
+    
+    // Estimate fees based on fee_type
+    let estimated_fees = if let Some(fee_type) = &fee_type {
+        if fee_type == &terminos_common::transaction::FeeType::Energy {
+            let (threshold, version) = {
+                let storage = wallet.get_storage().read().await;
+                let threshold = storage.get_multisig_state().await?
+                    .map(|m| m.payload.threshold);
+                let version = storage.get_tx_version().await?;
+                (threshold, version)
+            };
+            let mut state = EstimateFeesState::new();
+            let builder = TransactionBuilder::new(version, wallet.get_public_key().clone(), threshold, tx_type.clone(), FeeBuilder::default());
+            let energy_cost = builder.estimate_fees(&mut state)
+                .map_err(|e| CommandError::Any(e.into()))?;
+            let tos_fee = energy_cost * 10000; // ENERGY_TO_TOS_RATE
+            manager.message(format!("[DEBUG] Energy fee calculation: energy_cost={}, tos_fee={}", energy_cost, tos_fee));
+            tos_fee
+        } else {
+            let fee = wallet.estimate_fees(tx_type.clone(), FeeBuilder::default()).await.context("Error while estimating fees")?;
+            manager.message(format!("[DEBUG] TOS fee calculation: fee={}", fee));
+            fee
+        }
+    } else {
+        let fee = wallet.estimate_fees(tx_type.clone(), FeeBuilder::default()).await.context("Error while estimating fees")?;
+        manager.message(format!("[DEBUG] Default fee calculation: fee={}", fee));
+        fee
+    };
+
+    manager.message(format!("[DEBUG] estimated_fees: {}", estimated_fees));
+    
     let tx = if let Some(multisig) = multisig {
         create_transaction_with_multisig(manager, prompt, wallet, tx_type, multisig.payload).await?
     } else {
-        match wallet.create_transaction(tx_type, FeeBuilder::default()).await {
-            Ok(tx) => tx,
-            Err(e) => {
-                manager.error(&format!("Error while creating transaction: {}", e));
-                return Ok(())
+        // Create transaction with fee_type if specified
+        if let Some(fee_type) = fee_type {
+            // Use the same method as freeze_tos for Energy fee type
+            let mut storage = wallet.get_storage().write().await;
+            
+            // Use appropriate FeeBuilder based on fee_type
+            let fee_builder = if fee_type == terminos_common::transaction::FeeType::Energy {
+                FeeBuilder::Value(estimated_fees) // Use estimated fees for Energy fee type
+            } else {
+                FeeBuilder::Value(estimated_fees) // Use estimated fees for TOS fee type
+            };
+            
+            let mut state = wallet.create_transaction_state_with_storage(&storage, &tx_type, &fee_builder, None).await
+                .map_err(|e| CommandError::Any(e.into()))?;
+            
+            let threshold = storage.get_multisig_state().await?
+                .map(|m| m.payload.threshold);
+            let tx_version = storage.get_tx_version().await?;
+            
+            // Create transaction builder with fee_type
+            let mut builder = TransactionBuilder::new(tx_version, wallet.get_address().get_public_key().clone(), threshold, tx_type, fee_builder);
+            builder = builder.with_fee_type(fee_type);
+            
+            let transaction = builder.build(&mut state, wallet.get_keypair())
+                .map_err(|e| CommandError::Any(e.into()))?;
+            
+            // Apply changes to storage
+            state.apply_changes(&mut storage).await
+                .map_err(|e| CommandError::Any(e.into()))?;
+            
+            transaction
+        } else {
+            // Use default transaction creation method
+            match wallet.create_transaction(tx_type, FeeBuilder::default()).await {
+                Ok(tx) => tx,
+                Err(e) => {
+                    manager.error(&format!("Error while creating transaction: {}", e));
+                    return Ok(())
+                }
             }
         }
     };
-
 
     broadcast_tx(wallet, manager, tx).await;
     Ok(())
@@ -1240,6 +1342,35 @@ async fn transfer_all(manager: &CommandManager, mut args: ArgumentManager) -> Re
     }
 
     let asset = asset.unwrap_or(TERMINOS_ASSET);
+    
+    // Read fee_type parameter
+    let fee_type = if args.has_argument("fee_type") {
+        let fee_type_str = args.get_value("fee_type")?.to_string_value()?;
+        match fee_type_str.to_lowercase().as_str() {
+            "tos" => Some(terminos_common::transaction::FeeType::TOS),
+            "energy" => Some(terminos_common::transaction::FeeType::Energy),
+            _ => {
+                manager.error("Invalid fee_type. Please use 'tos' or 'energy'");
+                return Ok(())
+            }
+        }
+    } else {
+        // Interactive prompt for fee_type
+        let fee_type_str = prompt.read_input(
+            prompt.colorize_string(Color::Green, "Fee type (tos/energy, default: tos): "),
+            false
+        ).await.context("Error while reading fee type")?;
+        
+        match fee_type_str.to_lowercase().as_str() {
+            "" | "tos" => Some(terminos_common::transaction::FeeType::TOS),
+            "energy" => Some(terminos_common::transaction::FeeType::Energy),
+            _ => {
+                manager.error("Invalid fee_type. Please use 'tos' or 'energy'");
+                return Ok(())
+            }
+        }
+    };
+    
     let (mut amount, asset_data, multisig) = {
         let storage = wallet.get_storage().read().await;
         let amount = storage.get_plaintext_balance_for(&asset).await.unwrap_or(0);
@@ -1257,13 +1388,48 @@ async fn transfer_all(manager: &CommandManager, mut args: ArgumentManager) -> Re
         encrypt_extra_data: true
     };
     let tx_type = TransactionTypeBuilder::Transfers(vec![transfer]);
-    let estimated_fees = wallet.estimate_fees(tx_type.clone(), FeeBuilder::default()).await.context("Error while estimating fees")?;
+    
+    // Estimate fees based on fee_type
+    let estimated_fees = if let Some(fee_type) = &fee_type {
+        if fee_type == &terminos_common::transaction::FeeType::Energy {
+            let (threshold, version) = {
+                let storage = wallet.get_storage().read().await;
+                let threshold = storage.get_multisig_state().await?
+                    .map(|m| m.payload.threshold);
+                let version = storage.get_tx_version().await?;
+                (threshold, version)
+            };
+            let mut state = EstimateFeesState::new();
+            let builder = TransactionBuilder::new(version, wallet.get_public_key().clone(), threshold, tx_type.clone(), FeeBuilder::default());
+            let energy_cost = builder.estimate_fees(&mut state)
+                .map_err(|e| CommandError::Any(e.into()))?;
+            let tos_fee = energy_cost * 10000; // ENERGY_TO_TOS_RATE
+            manager.message(format!("[DEBUG] Energy fee calculation: energy_cost={}, tos_fee={}", energy_cost, tos_fee));
+            tos_fee
+        } else {
+            let fee = wallet.estimate_fees(tx_type.clone(), FeeBuilder::default()).await.context("Error while estimating fees")?;
+            manager.message(format!("[DEBUG] TOS fee calculation: fee={}", fee));
+            fee
+        }
+    } else {
+        let fee = wallet.estimate_fees(tx_type.clone(), FeeBuilder::default()).await.context("Error while estimating fees")?;
+        manager.message(format!("[DEBUG] Default fee calculation: fee={}", fee));
+        fee
+    };
 
-    if asset == TERMINOS_ASSET {
+    manager.message(format!("[DEBUG] estimated_fees: {}", estimated_fees));
+
+    // For TOS fee type, deduct fees from amount
+    if asset == TERMINOS_ASSET && fee_type.as_ref() != Some(&terminos_common::transaction::FeeType::Energy) {
         amount = amount.checked_sub(estimated_fees).context("Insufficient balance to pay fees")?;
     }
 
-    manager.message(format!("Sending {} of {} ({}) to {} (fees: {})", format_coin(amount, asset_data.get_decimals()), asset_data.get_name(), asset, address, format_tos(estimated_fees)));
+    let fee_type_display = fee_type.as_ref().map(|ft| match ft {
+        terminos_common::transaction::FeeType::TOS => "TOS",
+        terminos_common::transaction::FeeType::Energy => "Energy",
+    }).unwrap_or("Default");
+    
+    manager.message(format!("Sending {} of {} ({}) to {} (fee_type: {}, fees: {})", format_coin(amount, asset_data.get_decimals()), asset_data.get_name(), asset, address, fee_type_display, format_tos(estimated_fees)));
 
     if !args.get_flag("confirm")? && !prompt.ask_confirmation().await.context("Error while confirming action")? {
         manager.message("Transaction has been aborted");
@@ -1279,16 +1445,26 @@ async fn transfer_all(manager: &CommandManager, mut args: ArgumentManager) -> Re
         encrypt_extra_data: true
     };
     let tx_type = TransactionTypeBuilder::Transfers(vec![transfer]);
+    let fee_builder = FeeBuilder::Value(estimated_fees);
+    manager.message(format!("[DEBUG] Creating fee_builder: {:?}", fee_builder));
     let tx = if let Some(multisig) = multisig {
         create_transaction_with_multisig(manager, prompt, wallet, tx_type, multisig.payload).await?
     } else {
-        match wallet.create_transaction(tx_type, FeeBuilder::default()).await {
-            Ok(tx) => tx,
-            Err(e) => {
-                manager.error(&format!("Error while creating transaction: {}", e));
-                return Ok(())
-            }
+        let mut storage = wallet.get_storage().write().await;
+        let mut state = wallet.create_transaction_state_with_storage(&storage, &tx_type, &fee_builder, None).await
+            .map_err(|e| CommandError::Any(e.into()))?;
+        let threshold = storage.get_multisig_state().await?
+            .map(|m| m.payload.threshold);
+        let tx_version = storage.get_tx_version().await?;
+        let mut builder = TransactionBuilder::new(tx_version, wallet.get_address().get_public_key().clone(), threshold, tx_type, fee_builder);
+        if let Some(ft) = fee_type {
+            builder = builder.with_fee_type(ft);
         }
+        let transaction = builder.build(&mut state, wallet.get_keypair())
+            .map_err(|e| CommandError::Any(e.into()))?;
+        state.apply_changes(&mut storage).await
+            .map_err(|e| CommandError::Any(e.into()))?;
+        transaction
     };
 
     broadcast_tx(wallet, manager, tx).await;
@@ -1922,13 +2098,13 @@ async fn freeze_tos(manager: &CommandManager, mut args: ArgumentManager) -> Resu
     let context = manager.get_context().lock()?;
     let wallet: &Arc<Wallet> = context.get()?;
 
-    // Check if wallet is online
+    // Check if wallet is online - Energy operations require daemon connection
     if !wallet.is_online().await {
         manager.error("Wallet is not connected to a daemon. Please use 'online_mode' first.");
         return Ok(())
     }
 
-    // Get TOS balance
+    // Get TOS balance for validation
     let (max_balance, asset_data) = {
         let storage = wallet.get_storage().read().await;
         let balance = storage.get_plaintext_balance_for(&TERMINOS_ASSET).await.unwrap_or(0);
@@ -1936,7 +2112,7 @@ async fn freeze_tos(manager: &CommandManager, mut args: ArgumentManager) -> Resu
         (balance, asset)
     };
 
-    // Read amount
+    // Read and validate amount parameter
     let amount = if args.has_argument("amount") {
         args.get_value("amount")?.to_string_value()?
     } else {
@@ -1947,17 +2123,19 @@ async fn freeze_tos(manager: &CommandManager, mut args: ArgumentManager) -> Resu
 
     let amount = from_coin(amount, asset_data.get_decimals()).context("Invalid amount")?;
     
+    // Validate amount is greater than 0
     if amount == 0 {
         manager.error("Amount must be greater than 0");
         return Ok(())
     }
 
+    // Validate sufficient balance
     if amount > max_balance {
         manager.error("Insufficient TOS balance");
         return Ok(())
     }
 
-    // Read freeze duration
+    // Read and validate freeze duration parameter
     let duration = if args.has_argument("duration") {
         let duration_str = args.get_value("duration")?.to_string_value()?;
         match duration_str.as_str() {
@@ -1970,7 +2148,7 @@ async fn freeze_tos(manager: &CommandManager, mut args: ArgumentManager) -> Resu
             }
         }
     } else {
-        // Show duration options and let user choose
+        // Show duration options and let user choose interactively
         manager.message("Choose freeze duration:");
         manager.message("  1. 3 days  (1.0x reward multiplier)");
         manager.message("  2. 7 days  (1.1x reward multiplier)");
@@ -1991,13 +2169,15 @@ async fn freeze_tos(manager: &CommandManager, mut args: ArgumentManager) -> Resu
         }
     };
 
-    // Calculate energy gain
+    // Calculate energy gain for user confirmation
     let energy_gain = (amount as f64 * duration.reward_multiplier()) as u64;
     
+    // Display transaction summary for user confirmation
     manager.message(format!("Freezing {} TOS for {} days", format_coin(amount, asset_data.get_decimals()), duration.name()));
     manager.message(format!("Reward multiplier: {}x", duration.reward_multiplier()));
     manager.message(format!("Energy gained: {} units", energy_gain));
 
+    // Get user confirmation before proceeding
     if !args.get_flag("confirm")? && !prompt.ask_confirmation().await.context("Error while confirming action")? {
         manager.message("Transaction has been aborted");
         return Ok(())
@@ -2005,19 +2185,28 @@ async fn freeze_tos(manager: &CommandManager, mut args: ArgumentManager) -> Resu
 
     manager.message("Building transaction...");
     
-    // Create energy transaction builder with duration
+    // Create energy transaction builder with validated parameters
     let energy_builder = EnergyBuilder::freeze_tos(amount, duration);
+    
+    // Validate the builder configuration before creating transaction
+    if let Err(e) = energy_builder.validate() {
+        manager.error(&format!("Invalid energy builder configuration: {}", e));
+        return Ok(())
+    }
     
     let tx_type = TransactionTypeBuilder::Energy(energy_builder);
     
+    // Create and submit transaction with proper error handling
     let tx = match wallet.create_transaction(tx_type, FeeBuilder::default()).await {
         Ok(tx) => tx,
         Err(e) => {
             manager.error(&format!("Error while creating transaction: {}", e));
+            manager.error("This might be due to insufficient balance or invalid parameters");
             return Ok(())
         }
     };
 
+    // Broadcast transaction to network
     broadcast_tx(wallet, manager, tx).await;
     Ok(())
 }
@@ -2028,13 +2217,13 @@ async fn unfreeze_tos(manager: &CommandManager, mut args: ArgumentManager) -> Re
     let context = manager.get_context().lock()?;
     let wallet: &Arc<Wallet> = context.get()?;
 
-    // Check if wallet is online
+    // Check if wallet is online - Energy operations require daemon connection
     if !wallet.is_online().await {
         manager.error("Wallet is not connected to a daemon. Please use 'online_mode' first.");
         return Ok(())
     }
 
-    // Read amount
+    // Read and validate amount parameter
     let amount = if args.has_argument("amount") {
         args.get_value("amount")?.to_string_value()?
     } else {
@@ -2045,13 +2234,16 @@ async fn unfreeze_tos(manager: &CommandManager, mut args: ArgumentManager) -> Re
 
     let amount = from_coin(amount, 8).context("Invalid amount")?; // TOS has 8 decimals
     
+    // Validate amount is greater than 0
     if amount == 0 {
         manager.error("Amount must be greater than 0");
         return Ok(())
     }
 
+    // Display transaction summary for user confirmation
     manager.message(format!("Unfreezing {} TOS from energy", format_coin(amount, 8)));
 
+    // Get user confirmation before proceeding
     if !args.get_flag("confirm")? && !prompt.ask_confirmation().await.context("Error while confirming action")? {
         manager.message("Transaction has been aborted");
         return Ok(())
@@ -2059,19 +2251,28 @@ async fn unfreeze_tos(manager: &CommandManager, mut args: ArgumentManager) -> Re
 
     manager.message("Building transaction...");
     
-    // Create energy transaction builder
+    // Create energy transaction builder with validated parameters
     let energy_builder = EnergyBuilder::unfreeze_tos(amount);
+    
+    // Validate the builder configuration before creating transaction
+    if let Err(e) = energy_builder.validate() {
+        manager.error(&format!("Invalid energy builder configuration: {}", e));
+        return Ok(())
+    }
     
     let tx_type = TransactionTypeBuilder::Energy(energy_builder);
     
+    // Create and submit transaction with proper error handling
     let tx = match wallet.create_transaction(tx_type, FeeBuilder::default()).await {
         Ok(tx) => tx,
         Err(e) => {
             manager.error(&format!("Error while creating transaction: {}", e));
+            manager.error("This might be due to insufficient frozen TOS or invalid parameters");
             return Ok(())
         }
     };
 
+    // Broadcast transaction to network
     broadcast_tx(wallet, manager, tx).await;
     Ok(())
 }

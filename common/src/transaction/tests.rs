@@ -132,7 +132,7 @@ fn create_tx_for(account: Account, destination: Address, amount: u64, extra_data
     }]);
 
 
-    let builder = TransactionBuilder::new(TxVersion::V1, account.keypair.get_public_key().compress(), None, data, FeeBuilder::default());
+    let builder = TransactionBuilder::new(TxVersion::V0, account.keypair.get_public_key().compress(), None, data, FeeBuilder::default());
     let estimated_size = builder.estimate_size();
     let tx = builder.build(&mut state, &account.keypair).unwrap();
     assert!(estimated_size == tx.size(), "expected {} bytes got {} bytes", tx.size(), estimated_size);
@@ -262,7 +262,7 @@ async fn test_burn_tx_verify() {
         let builder = TransactionBuilder::new(TxVersion::V0, alice.keypair.get_public_key().compress(), None, data, FeeBuilder::default());
         let estimated_size = builder.estimate_size();
         let tx = builder.build(&mut state, &alice.keypair).unwrap();
-        assert!(estimated_size == tx.size());
+        assert!(estimated_size == tx.size(), "expected {} bytes got {} bytes", estimated_size, tx.size());
         assert!(tx.to_bytes().len() == estimated_size);
 
         tx
@@ -318,7 +318,7 @@ async fn test_tx_invoke_contract() {
                 })
             ].into_iter().collect()
         });
-        let builder = TransactionBuilder::new(TxVersion::V2, alice.keypair.get_public_key().compress(), None, data, FeeBuilder::default());
+        let builder = TransactionBuilder::new(TxVersion::V0, alice.keypair.get_public_key().compress(), None, data, FeeBuilder::default());
         let estimated_size = builder.estimate_size();
         let tx = builder.build(&mut state, &alice.keypair).unwrap();
         assert!(estimated_size == tx.size());
@@ -378,7 +378,7 @@ async fn test_tx_deploy_contract() {
             module: module.to_hex(),
             invoke: None
         });
-        let builder = TransactionBuilder::new(TxVersion::V2, alice.keypair.get_public_key().compress(), None, data, FeeBuilder::default());
+        let builder = TransactionBuilder::new(TxVersion::V0, alice.keypair.get_public_key().compress(), None, data, FeeBuilder::default());
         let estimated_size = builder.estimate_size();
         let tx = builder.build(&mut state, &alice.keypair).unwrap();
         assert!(estimated_size == tx.size(), "expected {} bytes got {} bytes", tx.size(), estimated_size);
@@ -504,11 +504,11 @@ async fn test_multisig_setup() {
             threshold: 2,
             participants: IndexSet::from_iter(vec![bob.keypair.get_public_key().to_address(false), charlie.keypair.get_public_key().to_address(false)]),
         });
-        let builder = TransactionBuilder::new(TxVersion::V1, alice.keypair.get_public_key().compress(), None, data, FeeBuilder::default());
+        let builder = TransactionBuilder::new(TxVersion::V0, alice.keypair.get_public_key().compress(), None, data, FeeBuilder::default());
         let estimated_size = builder.estimate_size();
         let tx = builder.build(&mut state, &alice.keypair).unwrap();
-        assert!(estimated_size == tx.size());
-        assert!(tx.to_bytes().len() == estimated_size);
+        assert!(estimated_size == tx.size(), "expected {} bytes got {} bytes", estimated_size, tx.size());
+        assert!(tx.to_bytes().len() == estimated_size, "expected {} bytes got {} bytes", estimated_size, tx.to_bytes().len());
 
         tx
     };
@@ -573,7 +573,7 @@ async fn test_multisig() {
             extra_data: None,
             encrypt_extra_data: true,
         }]);
-        let builder = TransactionBuilder::new(TxVersion::V1, alice.keypair.get_public_key().compress(), Some(2), data, FeeBuilder::default());
+        let builder = TransactionBuilder::new(TxVersion::V0, alice.keypair.get_public_key().compress(), Some(2), data, FeeBuilder::default());
         let mut tx = builder.build_unsigned(&mut state, &alice.keypair).unwrap();
 
         tx.sign_multisig(&charlie.keypair, 0);
@@ -725,7 +725,7 @@ fn test_transaction_builder_fee_type_validation() {
         
         // Use energy fees for transfer (explicit)
         let builder = TransactionBuilder::new(
-            TxVersion::V1, 
+            TxVersion::V0, 
             alice.keypair.get_public_key().compress(), 
             None, 
             data, 
@@ -755,7 +755,7 @@ fn test_transaction_builder_fee_type_validation() {
         
         // Use TOS fees for burn (explicit)
         let builder = TransactionBuilder::new(
-            TxVersion::V1, 
+            TxVersion::V0, 
             alice.keypair.get_public_key().compress(), 
             None, 
             data, 
@@ -815,7 +815,7 @@ fn test_transaction_size_with_fee_type() {
     
     // Test with TOS fees (explicit)
     let builder_tos = TransactionBuilder::new(
-        TxVersion::V1, 
+        TxVersion::V0, 
         alice.keypair.get_public_key().compress(), 
         None, 
         data.clone(), 
@@ -827,7 +827,7 @@ fn test_transaction_size_with_fee_type() {
     
     // Test with Energy fees (explicit)
     let builder_energy = TransactionBuilder::new(
-        TxVersion::V1, 
+        TxVersion::V0, 
         alice.keypair.get_public_key().compress(), 
         None, 
         data, 
@@ -866,7 +866,7 @@ fn test_fee_type_default_behavior() {
     
     // Test default FeeBuilder (should use TOS fees)
     let builder = TransactionBuilder::new(
-        TxVersion::V1, 
+        TxVersion::V0, 
         alice.keypair.get_public_key().compress(), 
         None, 
         data, 
@@ -903,7 +903,7 @@ fn test_transfer_default_fee_type_is_tos() {
     
     // Test default behavior (should use TOS fees regardless of fee amount)
     let builder = TransactionBuilder::new(
-        TxVersion::V1, 
+        TxVersion::V0, 
         alice.keypair.get_public_key().compress(), 
         None, 
         data, 
@@ -934,7 +934,7 @@ fn test_transfer_default_fee_type_is_tos() {
     }]);
     
     let builder2 = TransactionBuilder::new(
-        TxVersion::V1, 
+        TxVersion::V0, 
         alice.keypair.get_public_key().compress(), 
         None, 
         data2, 
@@ -973,7 +973,7 @@ fn test_explicit_fee_type_behavior() {
         }]);
         
         let builder = TransactionBuilder::new(
-            TxVersion::V1, 
+            TxVersion::V0, 
             alice.keypair.get_public_key().compress(), 
             None, 
             data, 
@@ -1006,7 +1006,7 @@ fn test_explicit_fee_type_behavior() {
         }]);
         
         let builder = TransactionBuilder::new(
-            TxVersion::V1, 
+            TxVersion::V0, 
             alice.keypair.get_public_key().compress(), 
             None, 
             data, 
@@ -1036,7 +1036,7 @@ fn test_explicit_fee_type_behavior() {
         });
         
         let builder = TransactionBuilder::new(
-            TxVersion::V1, 
+            TxVersion::V0, 
             alice.keypair.get_public_key().compress(), 
             None, 
             data, 
@@ -1072,7 +1072,7 @@ fn test_energy_fees_validation_for_non_transfer() {
         });
         
         let builder = TransactionBuilder::new(
-            TxVersion::V1, 
+            TxVersion::V0, 
             alice.keypair.get_public_key().compress(), 
             None, 
             data, 
@@ -1284,7 +1284,7 @@ async fn test_tos_transfer_with_tos_fees_balance_verification() {
     }]);
     
     let builder = TransactionBuilder::new(
-        TxVersion::V1, 
+        TxVersion::V0, 
         alice.keypair.get_public_key().compress(), 
         None, 
         data, 

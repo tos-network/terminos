@@ -327,13 +327,13 @@ impl<'a, S: Storage> BlockchainApplyState<'a, S, BlockchainError> for Applicable
 
     /// Update energy resource for an account
     async fn update_energy_resource(&mut self, account: &PublicKey, energy: EnergyResource) -> Result<(), BlockchainError> {
-        // Store energy resource in memory for later persistence
-        // This will be saved to storage in apply_changes()
-        self.inner.energy_resources.insert(account.clone(), energy.clone());
-        
-        debug!("Updated energy resource for account {}: {:?}", 
-               account.as_address(self.inner.storage.is_mainnet()), energy);
+        self.inner.energy_resources.insert(account.clone(), energy);
         Ok(())
+    }
+
+    /// Get the current topoheight
+    fn get_topo_height(&self) -> TopoHeight {
+        self.inner.topoheight
     }
 }
 

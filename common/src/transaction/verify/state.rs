@@ -5,7 +5,7 @@ use indexmap::IndexMap;
 use terminos_vm::{Environment, Module};
 use crate::{
     account::{Nonce, EnergyResource},
-    block::{Block, BlockVersion},
+    block::{Block, BlockVersion, TopoHeight},
     contract::{
         AssetChanges,
         ChainState,
@@ -189,4 +189,7 @@ pub trait BlockchainApplyState<'a, P: ContractProvider, E>: BlockchainVerificati
 
     /// Update energy resource for an account
     async fn update_energy_resource(&mut self, account: &PublicKey, energy: EnergyResource) -> Result<(), E>;
+
+    /// Get the current topoheight
+    fn get_topo_height(&self) -> TopoHeight;
 }

@@ -30,12 +30,11 @@ pub const MILLIS_PER_SECOND: u64 = 1000;
 // Block Time in milliseconds
 pub const BLOCK_TIME_MILLIS: u64 = 12 * MILLIS_PER_SECOND; // 12s block time
 // Minimum difficulty (each difficulty point is in H/s)
-// Current: BLOCK TIME in millis * 20 = 20 KH/s minimum
-// This is to prevent spamming the network with low difficulty blocks
-// This is active only on mainnet mode
-pub const MAINNET_MINIMUM_DIFFICULTY: Difficulty = Difficulty::from_u64(BLOCK_TIME_MILLIS * 20);
-// Testnet & Devnet minimum difficulty
-pub const OTHER_MINIMUM_DIFFICULTY: Difficulty = Difficulty::from_u64(BLOCK_TIME_MILLIS * 2);
+// Mainnet: BLOCK_TIME * 0.5 = 6 KH/s minimum (temporarily lowered for development)
+// Testnet/Devnet: BLOCK_TIME * 0.1 = 1.2 KH/s minimum (allows faster development)
+pub const MAINNET_MINIMUM_DIFFICULTY: Difficulty = Difficulty::from_u64(BLOCK_TIME_MILLIS / 2);
+// Testnet & Devnet minimum difficulty - much lower for development
+pub const OTHER_MINIMUM_DIFFICULTY: Difficulty = Difficulty::from_u64(BLOCK_TIME_MILLIS / 10);
 // This is also used as testnet and devnet minimum difficulty
 pub const GENESIS_BLOCK_DIFFICULTY: Difficulty = Difficulty::from_u64(1);
 // 2 seconds maximum in future (prevent any attack on reducing difficulty but keep margin for unsynced devices)
@@ -178,47 +177,49 @@ pub const PEER_PACKET_CHANNEL_SIZE: usize = 1024;
 pub const PEER_SEND_BYTES_TIMEOUT: u64 = 3_000;
 
 // Hard Forks configured
+// Modified: All networks now start with V3 from the beginning
 const HARD_FORKS: [HardFork; 1] = [
     HardFork {
         height: 0,
-        version: BlockVersion::V2,
-        changelog: "Initial version",
+        version: BlockVersion::V3,
+        changelog: "Initial version with full feature support",
         version_requirement: None
     }
 ];
 
 // Testnet / Devnet hard forks
+// Modified: All networks now start with V3 from the beginning
 const TESTNET_HARD_FORKS: [HardFork; 1] = [
     HardFork {
         height: 0,
-        version: BlockVersion::V2,
-        changelog: "Initial version",
+        version: BlockVersion::V3,
+        changelog: "Initial version with full feature support",
         version_requirement: None
     }
 ];
 
 // Mainnet seed nodes
-const MAINNET_SEED_NODES: [&str; 7] = [
+const MAINNET_SEED_NODES: [&str; 0] = [
     // France
-    "51.210.117.23:2125",
+    //"51.210.117.23:2125",
     // US
-    "198.71.55.87:2125",
+    //"198.71.55.87:2125",
     // Germany
-    "162.19.249.100:2125",
+    //"162.19.249.100:2125",
     // Singapore
-    "139.99.89.27:2125",
+    //"139.99.89.27:2125",
     // Poland
-    "51.68.142.141:2125",
+    //"51.68.142.141:2125",
     // Great Britain
-    "51.195.220.137:2125",
+    //"51.195.220.137:2125",
     // "Canada"
-    "66.70.179.137:2125"
+    //"66.70.179.137:2125"
 ];
 
 // Testnet seed nodes
-const TESTNET_SEED_NODES: [&str; 1] = [
+const TESTNET_SEED_NODES: [&str; 0] = [
     // US
-    "74.208.251.149:2125",
+    //"74.208.251.149:2125",
 ];
 
 // Genesis block to have the same starting point for every nodes
@@ -279,9 +280,10 @@ pub fn get_difficulty_at_hard_fork(network: &Network, block_version: BlockVersio
     match network {
         Network::Mainnet => match block_version {
             BlockVersion::V0 | BlockVersion::V1 => MAINNET_MINIMUM_DIFFICULTY,
-            // 20 KH/s * 100 000 = 2 GH/s
-            _ => MAINNET_MINIMUM_DIFFICULTY * Difficulty::from_u64(100_000),
+            // For newer versions, use the same minimum difficulty
+            _ => MAINNET_MINIMUM_DIFFICULTY,
         },
+        // For testnet/devnet, use much lower difficulty for development
         _ => OTHER_MINIMUM_DIFFICULTY,
     }
 }

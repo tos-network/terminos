@@ -20,6 +20,7 @@ use std::{
     collections::{HashMap, HashSet},
     iter,
 };
+use log::debug;
 use crate::{
     config::{BURN_PER_CONTRACT, MAX_GAS_USAGE_PER_TX, TERMINOS_ASSET},
     crypto::{
@@ -267,6 +268,7 @@ impl TransactionBuilder {
     /// Estimate by hand the bytes size of a final TX
     // Returns bytes size and transfers count
     pub fn estimate_size(&self) -> usize {
+        // Remove multisig bool byte size estimation
         let assets_used = self.data.used_assets().len();
         // Version byte
         let mut size = 1
@@ -288,13 +290,7 @@ impl TransactionBuilder {
         // assets * (commitment, asset, proof)
         + assets_used * (RISTRETTO_COMPRESSED_SIZE + HASH_SIZE + (RISTRETTO_COMPRESSED_SIZE * 3 + SCALAR_SIZE * 3))
         // Signature
-        + SIGNATURE_SIZE
-        ;
-
-        if self.version != TxVersion::V0 {
-            // 1 for optional multisig bool
-            size += 1;
-        }
+        + SIGNATURE_SIZE;
 
         if let Some(threshold) = self.required_thresholds {
             // 1 for Multisig participants count byte
@@ -316,7 +312,7 @@ impl TransactionBuilder {
                     // Extra data byte flag
                     + 1;
 
-                    if self.version >= TxVersion::V1 {
+                    if self.version >= TxVersion::V0 {
                         // Another point for Y_2
                         size += RISTRETTO_COMPRESSED_SIZE;
                     }
@@ -326,11 +322,7 @@ impl TransactionBuilder {
                         // 2 represents u16 length of UnknownExtraDataFormat
                         // We have both length has we move one in the other
                         // This mean new ExtraData version has 2 + 2 + 32 (sender) + 32 (receiver) bytes of overhead.
-                        if self.version >= TxVersion::V2 {
-                            size += ExtraDataType::estimate_size(extra_data, transfer.encrypt_extra_data);
-                        } else {
-                            size += ExtraData::estimate_size(extra_data);
-                        }
+                        size += ExtraDataType::estimate_size(extra_data, transfer.encrypt_extra_data);
                     }
                 }
                 commitments_count = transfers.len();
@@ -386,6 +378,15 @@ impl TransactionBuilder {
         // G_vec len
         + 2 * RISTRETTO_COMPRESSED_SIZE * lg_n;
 
+        // Add multisig size calculation
+        if let Some(threshold) = self.required_thresholds {
+            // 1 byte for Option<bool> + 1 byte for multisig count + threshold * (1 byte id + 64 bytes signature)
+            size += 1 + 1 + (threshold as usize * (1 + SIGNATURE_SIZE));
+        } else {
+            // 1 byte for Option<bool> (None)
+            size += 1;
+        }
+
         size
     }
 
@@ -417,7 +418,10 @@ impl TransactionBuilder {
     pub fn estimate_fees<B: FeeHelper>(&self, state: &mut B) -> Result<u64, GenerationError<B::Error>> {
         let calculated_fee = match self.fee_builder {
             // If the value is set, use it
-            FeeBuilder::Value(value) => value,
+            FeeBuilder::Value(value) => {
+                println!("[ESTIMATE DEBUG] Using FeeBuilder::Value({})", value);
+                value
+            },
             _ => {
                 // Compute the size and transfers count
                 let size = self.estimate_size();
@@ -438,30 +442,37 @@ impl TransactionBuilder {
                 // For non-transfer transactions, use TOS-based fee calculation
                 let expected_fee = if matches!(self.data, TransactionTypeBuilder::Transfers(_)) {
                     // Energy-based fee calculation for transfers
-                    calculate_energy_fee(
+                    let energy_fee = calculate_energy_fee(
                         size, 
                         transfers, 
                         new_addresses
-                    )
+                    );
+                    println!("[ESTIMATE DEBUG] Energy fee calculation: size={}, transfers={}, new_addresses={}, energy_fee={}", size, transfers, new_addresses, energy_fee);
+                    energy_fee
                 } else {
                     // TOS-based fee calculation for non-transfer transactions
                     // Use traditional fee calculation for non-transfer operations
-                    calculate_tx_fee(
+                    let tos_fee = calculate_tx_fee(
                         size, 
                         transfers, 
                         new_addresses, 
                         self.required_thresholds.unwrap_or(0) as usize
-                    )
+                    );
+                    println!("[ESTIMATE DEBUG] TOS fee calculation: size={}, transfers={}, new_addresses={}, tos_fee={}", size, transfers, new_addresses, tos_fee);
+                    tos_fee
                 };
                 
-                match self.fee_builder {
+                let final_fee = match self.fee_builder {
                     FeeBuilder::Multiplier(multiplier) => (expected_fee as f64 * multiplier) as u64,
                     FeeBuilder::Boost(boost) => expected_fee + boost,
                     _ => expected_fee,
-                }
+                };
+                println!("[ESTIMATE DEBUG] Final fee after multiplier/boost: {}", final_fee);
+                final_fee
             },
         };
 
+        println!("[ESTIMATE DEBUG] Returning calculated_fee: {}", calculated_fee);
         Ok(calculated_fee)
     }
 
@@ -480,6 +491,20 @@ impl TransactionBuilder {
             if !(fee == 0 && matches!(self.data, TransactionTypeBuilder::Transfers(_))) {
                 // Fees are applied to the native blockchain asset only.
                 ct -= Scalar::from(fee);
+            }
+            
+            // For energy transactions, also deduct the freeze/unfreeze amount
+            if let TransactionTypeBuilder::Energy(payload) = &self.data {
+                match payload {
+                    EnergyBuilder { amount, is_freeze: true, .. } => {
+                        // For freeze operations, deduct the freeze amount from TOS balance
+                        ct -= Scalar::from(*amount);
+                    },
+                    EnergyBuilder { amount: _, is_freeze: false, .. } => {
+                        // For unfreeze operations, no TOS deduction (it's returned to balance)
+                        // The amount is already handled in the energy system
+                    }
+                }
             }
         }
 
@@ -714,8 +739,14 @@ impl TransactionBuilder {
         // Save transaction type information early to avoid move issues
         let is_transfer = matches!(self.data, TransactionTypeBuilder::Transfers(_));
         
+        // Debug: Print fee_builder before fee estimation
+        println!("[BUILDER DEBUG] fee_builder: {:?}", self.fee_builder);
+        
         // Compute the fees
         let fee = self.estimate_fees(state)?;
+        
+        // Debug: Print computed fee
+        println!("[BUILDER DEBUG] computed fee: {}", fee);
 
         // Get the nonce
         let nonce = state.get_nonce().map_err(GenerationError::State)?;
@@ -820,7 +851,10 @@ impl TransactionBuilder {
                     )?;
                 }
             },
-            TransactionTypeBuilder::Energy(_payload) => {
+            TransactionTypeBuilder::Energy(payload) => {
+                // Validate EnergyBuilder configuration before processing
+                payload.validate()
+                    .map_err(|e| GenerationError::InvalidEnergyPayload(e))?;
                 // Energy operations don't have deposits
             },
             TransactionTypeBuilder::Burn(_) => {},
@@ -885,7 +919,7 @@ impl TransactionBuilder {
                 transcript.append_hash(b"new_source_commitment_asset", &asset);
                 transcript.append_commitment(b"new_source_commitment", &commitment);
 
-                if self.version >= TxVersion::V1 {
+                if self.version >= TxVersion::V0 {
                     transcript.append_ciphertext(b"source_ct", &source_ct_compressed);
                 }
 
@@ -927,7 +961,7 @@ impl TransactionBuilder {
                         transcript.append_handle(b"amount_sender_handle", &sender_handle);
                         transcript.append_handle(b"amount_receiver_handle", &receiver_handle);
     
-                        let source_pubkey = if self.version >= TxVersion::V1 {
+                        let source_pubkey = if self.version >= TxVersion::V0 {
                             Some(source_keypair.get_public_key())
                         } else {
                             None
@@ -948,7 +982,7 @@ impl TransactionBuilder {
                         let extra_data = if let Some(extra_data) = transfer.inner.extra_data {
                             let bytes = extra_data.to_bytes();
 
-                            let cipher: UnknownExtraDataFormat = if self.version >= TxVersion::V2 {
+                            let cipher: UnknownExtraDataFormat = if self.version >= TxVersion::V0 {
                                 if transfer.inner.encrypt_extra_data {
                                     ExtraDataType::Private(ExtraData::new(
                                         PlaintextData(bytes),
@@ -1018,8 +1052,13 @@ impl TransactionBuilder {
                     );
                 }
             },
-            TransactionTypeBuilder::Energy(_payload) => {
-                // Energy operations don't have deposits
+            TransactionTypeBuilder::Energy(payload) => {
+                // Validate EnergyBuilder configuration before processing
+                payload.validate()
+                    .map_err(|e| GenerationError::InvalidEnergyPayload(e))?;
+                
+                // Energy operations don't have deposits - validation already done above
+                // Transcript operations will be added later in the data creation phase
             },
             TransactionTypeBuilder::Burn(_) => {},
             TransactionTypeBuilder::MultiSig(_) => {}
@@ -1037,7 +1076,55 @@ impl TransactionBuilder {
         range_proof_openings.extend(iter::repeat(Scalar::ZERO).take(n_dud_commitments));
 
         let data = match self.data {
-            TransactionTypeBuilder::Transfers(_) => TransactionType::Transfers(transfers),
+            TransactionTypeBuilder::Transfers(_) => {
+                // Add Energy fee transcript operations for transfer transactions using Energy fees
+                // This ensures consistency between build and verification phases
+                if let Some(fee_type) = &self.fee_type {
+                    if fee_type == &FeeType::Energy {
+                        // Use the same calculation method as verification phase
+                        // Calculate energy cost based on transaction size and transfer count
+                        // Calculate new_addresses the same way as in fee estimation
+                        let mut new_addresses = 0;
+                        for transfer in &transfers {
+                            if !state.account_exists(transfer.get_destination()).map_err(GenerationError::State)? {
+                                new_addresses += 1;
+                            }
+                        }
+                        
+                        let energy_cost = calculate_energy_fee(
+                            self.estimate_size(),
+                            transfers.len(),
+                            new_addresses
+                        );
+                        
+                        println!("🔍 Transfer with Energy fees transcript operation (build phase):");
+                        println!("  Energy cost: {} units", energy_cost);
+                        println!("  Fee: {}, Nonce: {}", fee, nonce);
+                        println!("  Transaction size: {} bytes, Transfer count: {}", self.estimate_size(), transfers.len());
+                        
+                        transcript.append_u64(b"transfer_energy_fee", energy_cost);
+                        transcript.append_u64(b"transfer_uses_energy", 1);
+                        
+                        println!("  Transfer Energy fee transcript operation completed (build phase)");
+                        debug!("Transfer with Energy fees (build) - energy_cost: {}, fee: {}, nonce: {}", 
+                               energy_cost, fee, nonce);
+                    } else {
+                        // For TOS fees, add TOS fee information to transcript
+                        transcript.append_u64(b"transfer_tos_fee", fee);
+                        transcript.append_u64(b"transfer_uses_energy", 0);
+                        
+                        debug!("Transfer with TOS fees (build) - fee: {}, nonce: {}", fee, nonce);
+                    }
+                } else {
+                    // Default to TOS fees if fee_type is not specified
+                    transcript.append_u64(b"transfer_tos_fee", fee);
+                    transcript.append_u64(b"transfer_uses_energy", 0);
+                    
+                    debug!("Transfer with default TOS fees (build) - fee: {}, nonce: {}", fee, nonce);
+                }
+                
+                TransactionType::Transfers(transfers)
+            },
             TransactionTypeBuilder::Burn(payload) => {
                 // Check if the burn amount is zero
                 // Burn of zero are useless and consume fees for nothing
@@ -1045,7 +1132,7 @@ impl TransactionBuilder {
                     return Err(GenerationError::BurnZero);
                 }
 
-                if self.version >= TxVersion::V1 {
+                if self.version >= TxVersion::V0 {
                     transcript.burn_proof_domain_separator();
                     transcript.append_hash(b"burn_asset", &payload.asset);
                     transcript.append_u64(b"burn_amount", payload.amount);
@@ -1123,6 +1210,10 @@ impl TransactionBuilder {
                 })
             },
             TransactionTypeBuilder::Energy(payload) => {
+                // Validate EnergyBuilder configuration before processing
+                payload.validate()
+                    .map_err(|e| GenerationError::InvalidEnergyPayload(e))?;
+
                 // Create energy payload based on operation type with duration support
                 let energy_payload = if payload.is_freeze {
                     // Validate freeze operation
@@ -1143,6 +1234,13 @@ impl TransactionBuilder {
                         amount: payload.amount 
                     }
                 };
+
+                // Use unified transcript operation for energy transactions
+                // This ensures consistency between generation and verification
+                Transaction::append_energy_transcript(&mut transcript, &energy_payload);
+
+                debug!("Energy transaction built - payload: {:?}, fee_builder: {:?}", 
+                       energy_payload, self.fee_builder);
 
                 TransactionType::Energy(energy_payload)
             }

@@ -90,3 +90,7 @@ harness = false
 [[bench]]
 name = "homomorphic_encryption"
 harness = false
+
+[[bench]]
+name = "energy"
+harness = false

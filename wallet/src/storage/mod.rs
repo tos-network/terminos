@@ -145,7 +145,7 @@ impl EncryptedStorage {
             assets_cache: Mutex::new(LruCache::new(NonZeroUsize::new(DEFAULT_CACHE_SIZE).unwrap())),
             synced_topoheight: None,
             last_coinbase_reward_topoheight: None,
-            tx_version: TxVersion::V0,
+            tx_version: TxVersion::V0, // Modified: Default to V0
             multisig_state: None
         };
 

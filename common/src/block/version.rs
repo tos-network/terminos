@@ -20,21 +20,19 @@ pub enum BlockVersion {
 
 impl BlockVersion {
     // Check if a transaction version is allowed in a block version
+    // Modified: All block versions now support all transaction versions
     pub fn is_tx_version_allowed(&self, tx_version: TxVersion) -> bool {
-        match self {
-            BlockVersion::V0 | BlockVersion::V1 => matches!(tx_version, TxVersion::V0),
-            BlockVersion::V2 => matches!(tx_version, TxVersion::V1),
-            BlockVersion::V3 => matches!(tx_version, TxVersion::V2),
+        // All block versions support all transaction versions
+        match tx_version {
+            TxVersion::V0 => true,
         }
     }
 
     // Get the transaction version for a given block version
+    // Modified: All block versions now return V0 as the default transaction version
     pub fn get_tx_version(&self) -> TxVersion {
-        match self {
-            BlockVersion::V0 | BlockVersion::V1 => TxVersion::V0,
-            BlockVersion::V2 => TxVersion::V1,
-            BlockVersion::V3 => TxVersion::V2,
-        }
+        // All block versions now support V0 transactions by default
+        TxVersion::V0
     }
 }
 

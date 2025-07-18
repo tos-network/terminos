@@ -254,4 +254,121 @@ mod tests {
         assert_eq!(resource.frozen_tos, 0);
         assert_eq!(resource.total_energy, 0);
     }
+
+    #[test]
+    fn test_unfreeze_tos_comprehensive() {
+        println!("Testing comprehensive unfreeze_tos functionality...");
+        
+        let mut resource = EnergyResource::new();
+        let topoheight = 1000;
+        
+        // Test 1: Basic unfreeze functionality
+        println!("  Test 1: Basic unfreeze functionality");
+        resource.freeze_tos_for_energy(1000, FreezeDuration::Day7, topoheight);
+        let unlock_topoheight = topoheight + FreezeDuration::Day7.duration_in_blocks();
+        
+        let energy_removed = resource.unfreeze_tos(500, unlock_topoheight).unwrap();
+        assert_eq!(energy_removed, 550); // 500 * 1.1
+        assert_eq!(resource.frozen_tos, 500);
+        assert_eq!(resource.total_energy, 550);
+        
+        // Test 2: Unfreeze before unlock time
+        println!("  Test 2: Unfreeze before unlock time");
+        let result = resource.unfreeze_tos(200, unlock_topoheight - 1000);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Insufficient unlocked TOS to unfreeze");
+        
+        // Test 3: Unfreeze more than frozen
+        println!("  Test 3: Unfreeze more than frozen");
+        let result = resource.unfreeze_tos(1000, unlock_topoheight);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Insufficient frozen TOS");
+        
+        // Test 4: Multiple freeze records
+        println!("  Test 4: Multiple freeze records");
+        let mut resource2 = EnergyResource::new();
+        resource2.freeze_tos_for_energy(100, FreezeDuration::Day3, topoheight);
+        resource2.freeze_tos_for_energy(200, FreezeDuration::Day7, topoheight);
+        resource2.freeze_tos_for_energy(300, FreezeDuration::Day14, topoheight);
+        
+        let max_unlock_topoheight = topoheight + FreezeDuration::Day14.duration_in_blocks();
+        let energy_removed = resource2.unfreeze_tos(250, max_unlock_topoheight).unwrap();
+        assert_eq!(energy_removed, 100 + 220); // 100*1.0 + 150*1.1 (partial from 200)
+        assert_eq!(resource2.frozen_tos, 350); // 50 + 300 (remaining from 200 + 300)
+        
+        // Test 5: Edge cases
+        println!("  Test 5: Edge cases");
+        let mut resource3 = EnergyResource::new();
+        
+        // Unfreeze 0 TOS
+        let result = resource3.unfreeze_tos(0, topoheight);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+        
+        // Unfreeze from empty resource
+        let result = resource3.unfreeze_tos(100, topoheight);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Insufficient frozen TOS");
+        
+        println!("✓ Comprehensive unfreeze_tos tests passed");
+    }
+
+    #[test]
+    fn test_unfreeze_tos_energy_calculation_accuracy() {
+        println!("Testing unfreeze_tos energy calculation accuracy...");
+        
+        let test_cases = vec![
+            (100, FreezeDuration::Day3, 1.0),
+            (200, FreezeDuration::Day7, 1.1),
+            (300, FreezeDuration::Day14, 1.2),
+        ];
+        
+        for (amount, duration, multiplier) in test_cases {
+            let mut resource = EnergyResource::new();
+            let topoheight = 1000;
+            
+            resource.freeze_tos_for_energy(amount, duration.clone(), topoheight);
+            let unlock_topoheight = topoheight + duration.duration_in_blocks();
+            
+            // Unfreeze half the amount
+            let unfreeze_amount = amount / 2;
+            let energy_removed = resource.unfreeze_tos(unfreeze_amount, unlock_topoheight).unwrap();
+            let expected_energy_removed = (unfreeze_amount as f64 * multiplier) as u64;
+            
+            assert_eq!(energy_removed, expected_energy_removed);
+            println!("  ✓ {} TOS for {} days: expected {} energy, got {} energy", 
+                     amount, duration.duration_in_blocks() / (24 * 60 * 60), expected_energy_removed, energy_removed);
+        }
+        
+        println!("✓ Energy calculation accuracy tests passed");
+    }
+
+    #[test]
+    fn test_unfreeze_tos_record_management() {
+        println!("Testing unfreeze_tos record management...");
+        
+        let mut resource = EnergyResource::new();
+        let topoheight = 1000;
+        
+        // Create multiple records with different unlock times
+        resource.freeze_tos_for_energy(100, FreezeDuration::Day3, topoheight);
+        resource.freeze_tos_for_energy(200, FreezeDuration::Day7, topoheight);
+        resource.freeze_tos_for_energy(300, FreezeDuration::Day14, topoheight);
+        
+        assert_eq!(resource.freeze_records.len(), 3);
+        
+        // Unfreeze from earliest unlockable records first
+        let unlock_3d = topoheight + FreezeDuration::Day3.duration_in_blocks();
+        let energy_removed = resource.unfreeze_tos(150, unlock_3d).unwrap();
+        assert_eq!(energy_removed, 100); // Only 100 from 3-day record
+        assert_eq!(resource.frozen_tos, 500); // 200 + 300 remaining
+        
+        // Unfreeze from 7-day record
+        let unlock_7d = topoheight + FreezeDuration::Day7.duration_in_blocks();
+        let energy_removed2 = resource.unfreeze_tos(100, unlock_7d).unwrap();
+        assert_eq!(energy_removed2, 110); // 100 * 1.1 from 7-day record
+        assert_eq!(resource.frozen_tos, 400); // 100 + 300 remaining
+        
+        println!("✓ Record management tests passed");
+    }
 } 

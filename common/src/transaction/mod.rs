@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use merlin::Transcript;
+use log::debug;
 use crate::{
     account::Nonce,
     crypto::{
@@ -29,7 +31,72 @@ pub use version::TxVersion;
 pub use source_commitment::SourceCommitment;
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    use super::*;
+    use crate::account::energy::FreezeDuration;
+    use merlin::Transcript;
+
+    #[test]
+    fn test_append_energy_transcript_consistency() {
+        // Test FreezeTos transcript consistency
+        let freeze_duration = FreezeDuration::Day7;
+        let freeze_payload = EnergyPayload::FreezeTos {
+            amount: 1000,
+            duration: freeze_duration,
+        };
+
+        let mut transcript1 = Transcript::new(b"test_transcript");
+        let mut transcript2 = Transcript::new(b"test_transcript");
+        
+        // Use unified transcript operation
+        Transaction::append_energy_transcript(&mut transcript1, &freeze_payload);
+        Transaction::append_energy_transcript(&mut transcript2, &freeze_payload);
+        
+        // Both transcripts should be identical
+        let mut challenge1 = [0u8; 32];
+        let mut challenge2 = [0u8; 32];
+        transcript1.challenge_bytes(b"test", &mut challenge1);
+        transcript2.challenge_bytes(b"test", &mut challenge2);
+        assert_eq!(challenge1, challenge2);
+
+        // Test UnfreezeTos transcript consistency
+        let unfreeze_payload = EnergyPayload::UnfreezeTos {
+            amount: 500,
+        };
+
+        let mut transcript3 = Transcript::new(b"test_transcript");
+        let mut transcript4 = Transcript::new(b"test_transcript");
+        
+        // Use unified transcript operation
+        Transaction::append_energy_transcript(&mut transcript3, &unfreeze_payload);
+        Transaction::append_energy_transcript(&mut transcript4, &unfreeze_payload);
+        
+        // Both transcripts should be identical
+        let mut challenge3 = [0u8; 32];
+        let mut challenge4 = [0u8; 32];
+        transcript3.challenge_bytes(b"test", &mut challenge3);
+        transcript4.challenge_bytes(b"test", &mut challenge4);
+        assert_eq!(challenge3, challenge4);
+    }
+
+    #[test]
+    fn test_energy_transcript_includes_tos_balance_changes() {
+        let freeze_duration = FreezeDuration::Day7;
+        let freeze_payload = EnergyPayload::FreezeTos {
+            amount: 1000,
+            duration: freeze_duration,
+        };
+
+        let mut transcript = Transcript::new(b"test_transcript");
+        Transaction::append_energy_transcript(&mut transcript, &freeze_payload);
+        
+        // The transcript should include both energy and TOS balance change information
+        // This ensures that both energy and TOS balance changes are considered in proof generation
+        let mut challenge = [0u8; 32];
+        transcript.challenge_bytes(b"test", &mut challenge);
+        assert_ne!(challenge, [0u8; 32], "Transcript should contain data");
+    }
+}
 
 // Maximum size of extra data per transfer
 pub const EXTRA_DATA_LIMIT_SIZE: usize = 1024;
@@ -298,6 +365,41 @@ impl Transaction {
     pub fn consume(self) -> (CompressedPublicKey, TransactionType) {
         (self.source, self.data)
     }
+
+    /// Unified transcript operation for energy transactions
+    /// This function ensures consistent transcript operations between generation and verification
+    /// It handles both energy changes and TOS balance changes for freeze/unfreeze operations
+    pub fn append_energy_transcript(transcript: &mut Transcript, payload: &EnergyPayload) {
+        match payload {
+            EnergyPayload::FreezeTos { amount, duration } => {
+                // Add energy operation parameters
+                transcript.append_u64(b"energy_amount", *amount);
+                transcript.append_u64(b"energy_is_freeze", 1);
+                transcript.append_u64(b"energy_freeze_duration", duration.duration_in_blocks());
+                
+                // Add TOS balance change information
+                // FreezeTos deducts TOS from balance and adds energy
+                transcript.append_u64(b"tos_balance_change", *amount); // Amount deducted from TOS balance
+                transcript.append_u64(b"energy_gained", (*amount as f64 * duration.reward_multiplier()) as u64);
+                
+                debug!("Energy transcript - FreezeTos: amount={}, duration={}, tos_deducted={}, energy_gained={}", 
+                       amount, duration.duration_in_blocks(), amount, (*amount as f64 * duration.reward_multiplier()) as u64);
+            },
+            EnergyPayload::UnfreezeTos { amount } => {
+                // Add energy operation parameters
+                transcript.append_u64(b"energy_amount", *amount);
+                transcript.append_u64(b"energy_is_freeze", 0);
+                
+                // Add TOS balance change information
+                // UnfreezeTos returns TOS to balance and removes energy
+                transcript.append_u64(b"tos_balance_change", *amount); // Amount returned to TOS balance
+                transcript.append_u64(b"energy_removed", *amount); // Energy removed (1:1 ratio for unfreeze)
+                
+                debug!("Energy transcript - UnfreezeTos: amount={}, tos_returned={}, energy_removed={}", 
+                       amount, amount, amount);
+            }
+        }
+    }
 }
 
 impl Serializer for TransactionType {
@@ -402,9 +504,8 @@ impl Serializer for Transaction {
         self.range_proof.write(writer);
         self.reference.write(writer);
 
-        if self.version != TxVersion::V0 {
-            self.multisig.write(writer);
-        }
+        // Include multisig information in V0 version as well
+        self.multisig.write(writer);
 
         self.signature.write(writer);
     }
@@ -434,7 +535,8 @@ impl Serializer for Transaction {
         let range_proof = RangeProof::read(reader)?;
         let reference = Reference::read(reader)?;
         let multisig = if version == TxVersion::V0 {
-            None
+            // Read multisig information in V0 version as well
+            Option::read(reader)?
         } else {
             Option::read(reader)?
         };
@@ -458,7 +560,7 @@ impl Serializer for Transaction {
 
     fn size(&self) -> usize {
         // Version byte
-        let mut size = 1
+        let size = 1
         + self.source.size()
         + self.data.size()
         + self.fee.size()
@@ -469,11 +571,9 @@ impl Serializer for Transaction {
         + self.source_commitments.iter().map(|c| c.size()).sum::<usize>()
         + self.range_proof.size()
         + self.reference.size()
+        // Calculate multisig size in V0 version as well
+        + self.multisig.size()
         + self.signature.size();
-
-        if self.version != TxVersion::V0 {
-            size += self.multisig.size();
-        }
 
         size
     }

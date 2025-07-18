@@ -4,6 +4,8 @@ logs/
 mainnet/
 testnet/
 dev/
+dev-*/
+dev_*/
 peerlist-*/
 .vscode/
 wallets/

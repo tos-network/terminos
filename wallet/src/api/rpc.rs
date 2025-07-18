@@ -380,10 +380,30 @@ async fn build_transaction(context: &Context, body: Value) -> Result<Value, Inte
     let fee = params.fee.unwrap_or_default();
     let mut state = wallet.create_transaction_state_with_storage(&storage, &params.tx_type, &fee, params.nonce).await?;
 
+    // Handle fee_type parameter
+    let builder = if params.signers.is_empty() {
+        // Use wallet's create_transaction_with method
+        None
+    } else {
+        let mut builder = TransactionBuilder::new(version, wallet.get_public_key().clone(), Some(params.signers.len() as u8), params.tx_type.clone(), fee);
+        
+        // Apply fee_type if specified
+        if let Some(fee_type_str) = &params.fee_type {
+            let fee_type = match fee_type_str.to_lowercase().as_str() {
+                "tos" => terminos_common::transaction::FeeType::TOS,
+                "energy" => terminos_common::transaction::FeeType::Energy,
+                _ => return Err(InternalRpcError::InvalidParams("Invalid fee_type, must be 'tos' or 'energy'"))
+            };
+            builder = builder.with_fee_type(fee_type);
+        }
+        
+        Some(builder)
+    };
+
     let tx = if params.signers.is_empty() {
         wallet.create_transaction_with(&mut state, None, version, params.tx_type, fee)?
     } else {
-        let builder = TransactionBuilder::new(version, wallet.get_public_key().clone(), Some(params.signers.len() as u8), params.tx_type, fee);
+        let builder = builder.unwrap();
         let mut unsigned = builder.build_unsigned(&mut state, wallet.get_keypair())
             .context("Error while building unsigned transaction")?;
 
@@ -457,10 +477,29 @@ async fn build_transaction_offline(context: &Context, body: Value) -> Result<Val
         storage.get_tx_version().await?
     };
 
+    // Handle fee_type parameter
+    let builder = if params.signers.is_empty() {
+        None
+    } else {
+        let mut builder = TransactionBuilder::new(version, wallet.get_public_key().clone(), Some(params.signers.len() as u8), params.tx_type.clone(), params.fee);
+        
+        // Apply fee_type if specified
+        if let Some(fee_type_str) = &params.fee_type {
+            let fee_type = match fee_type_str.to_lowercase().as_str() {
+                "tos" => terminos_common::transaction::FeeType::TOS,
+                "energy" => terminos_common::transaction::FeeType::Energy,
+                _ => return Err(InternalRpcError::InvalidParams("Invalid fee_type, must be 'tos' or 'energy'"))
+            };
+            builder = builder.with_fee_type(fee_type);
+        }
+        
+        Some(builder)
+    };
+
     let tx = if params.signers.is_empty() {
         wallet.create_transaction_with(&mut state, None, version, params.tx_type, params.fee)?
     } else {
-        let builder = TransactionBuilder::new(version, wallet.get_public_key().clone(), Some(params.signers.len() as u8), params.tx_type, params.fee);
+        let builder = builder.unwrap();
         let mut unsigned = builder.build_unsigned(&mut state, wallet.get_keypair())
             .context("Error while building unsigned transaction")?;
 
@@ -503,8 +542,18 @@ async fn build_unsigned_transaction(context: &Context, body: Value) -> Result<Va
     let threshold = storage.get_multisig_state().await?
         .map(|state| state.payload.threshold);
 
-    // Generate the TX
-    let builder = TransactionBuilder::new(version, wallet.get_public_key().clone(), threshold, params.tx_type, fee);
+    // Generate the TX with fee_type support
+    let mut builder = TransactionBuilder::new(version, wallet.get_public_key().clone(), threshold, params.tx_type.clone(), fee);
+    
+    // Apply fee_type if specified
+    if let Some(fee_type_str) = &params.fee_type {
+        let fee_type = match fee_type_str.to_lowercase().as_str() {
+            "tos" => terminos_common::transaction::FeeType::TOS,
+            "energy" => terminos_common::transaction::FeeType::Energy,
+            _ => return Err(InternalRpcError::InvalidParams("Invalid fee_type, must be 'tos' or 'energy'"))
+        };
+        builder = builder.with_fee_type(fee_type);
+    }
     let unsigned = builder.build_unsigned(&mut state, wallet.get_keypair())
         .context("Error while building unsigned transaction")?;
 
@@ -821,12 +870,12 @@ async fn freeze_tos(context: &Context, body: Value) -> Result<Value, InternalRpc
         return Err(InternalRpcError::InvalidRequestStr("Wallet is not connected to a daemon"))
     }
 
-    // Check if amount is valid
+    // Validate amount parameter
     if params.amount == 0 {
         return Err(InternalRpcError::InvalidParams("Amount must be greater than 0"))
     }
 
-    // Parse duration
+    // Parse and validate duration parameter
     let duration = match params.duration.as_str() {
         "3" | "3d" | "3days" => terminos_common::account::energy::FreezeDuration::Day3,
         "7" | "7d" | "7days" => terminos_common::account::energy::FreezeDuration::Day7,
@@ -836,12 +885,17 @@ async fn freeze_tos(context: &Context, body: Value) -> Result<Value, InternalRpc
         }
     };
 
-    // Create energy transaction builder with duration
+    // Create energy transaction builder with validated parameters
     let energy_builder = EnergyBuilder::freeze_tos(params.amount, duration.clone());
+    
+    // Validate the builder configuration before creating transaction
+    if let Err(_) = energy_builder.validate() {
+        return Err(InternalRpcError::InvalidParams("Invalid energy builder configuration"))
+    }
     
     let tx_type = TransactionTypeBuilder::Energy(energy_builder);
     
-    // Create and submit transaction
+    // Create and submit transaction with proper error handling
     match wallet.create_transaction(tx_type, FeeBuilder::default()).await {
         Ok(tx) => {
             if let Err(_) = wallet.submit_transaction(&tx).await {
@@ -871,17 +925,22 @@ async fn unfreeze_tos(context: &Context, body: Value) -> Result<Value, InternalR
         return Err(InternalRpcError::InvalidRequestStr("Wallet is not connected to a daemon"))
     }
 
-    // Check if amount is valid
+    // Validate amount parameter
     if params.amount == 0 {
         return Err(InternalRpcError::InvalidParams("Amount must be greater than 0"))
     }
 
-    // Create energy transaction builder
+    // Create energy transaction builder with validated parameters
     let energy_builder = EnergyBuilder::unfreeze_tos(params.amount);
+    
+    // Validate the builder configuration before creating transaction
+    if let Err(_) = energy_builder.validate() {
+        return Err(InternalRpcError::InvalidParams("Invalid energy builder configuration"))
+    }
     
     let tx_type = TransactionTypeBuilder::Energy(energy_builder);
     
-    // Create and submit transaction
+    // Create and submit transaction with proper error handling
     match wallet.create_transaction(tx_type, FeeBuilder::default()).await {
         Ok(tx) => {
             if let Err(_) = wallet.submit_transaction(&tx).await {

@@ -199,7 +199,7 @@ impl Serializer for CiphertextValidityProof {
             .get_copy()?;
         let Y_0 = CompressedRistretto::read(reader)?;
         let Y_1 = CompressedRistretto::read(reader)?;
-        let Y_2 = if version >= TxVersion::V1 {
+        let Y_2 = if version >= TxVersion::V0 {
             Some(CompressedRistretto::read(reader)?)
         } else {
             None
